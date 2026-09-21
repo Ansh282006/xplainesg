@@ -1,0 +1,43 @@
+# ---------- secrets ----------
+.env
+.env.*
+!.env.example
+
+# ---------- python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---------- node ----------
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+coverage/
+
+# ---------- ml artifacts ----------
+ml/models/*.pkl
+ml/models/*.joblib
+ml/models/*.bin
+ml/models/*.safetensors
+ml/models/*.onnx
+ml/datasets/raw/
+ml/datasets/processed/
+ml/notebooks/.ipynb_checkpoints/
+*.h5
+
+# ---------- supabase ----------
+supabase/.branches/
+supabase/.temp/
+
+# ---------- editors / os ----------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
