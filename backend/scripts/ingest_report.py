@@ -1,5 +1,5 @@
 ﻿"""
-End-to-end ingestion: PDF -> claims -> Supabase.
+End-to-end ingestion: PDF -> Storage -> claims -> Supabase.
 
 Usage:
   python scripts/ingest_report.py \
@@ -15,7 +15,6 @@ import argparse
 import sys
 from pathlib import Path
 
-# Ensure `app` is importable when running as a script
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database.supabase_client import get_supabase_admin
@@ -24,7 +23,8 @@ from app.nlp.pdf_extractor import extract_pdf
 from app.nlp.text_cleaner import segment_sentences
 from app.services.claim_service import replace_claims_for_report
 from app.services.company_service import upsert_company
-from app.services.report_service import upsert_report
+from app.services.report_service import update_report_file_metadata, upsert_report
+from app.services.storage_service import upload_report_pdf
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -42,6 +42,8 @@ def main() -> None:
     p.add_argument("--year", type=int, required=True)
     p.add_argument("--report-title", required=True)
     p.add_argument("--report-type", default="integrated")
+    p.add_argument("--skip-storage", action="store_true",
+                   help="Skip Supabase Storage upload (for offline/debug runs)")
     args = p.parse_args()
 
     pdf_path = Path(args.pdf).resolve()
@@ -74,12 +76,33 @@ def main() -> None:
     )
     logger.info("Report: %s (id=%s)", report["report_title"], report["id"])
 
-    # 3. Extract
+    # 3. Upload PDF to Storage
+    if not args.skip_storage:
+        if not company.get("ticker"):
+            logger.warning("No ticker set; skipping Storage upload.")
+        else:
+            meta = upload_report_pdf(
+                sb,
+                local_path=pdf_path,
+                ticker=company["ticker"],
+                year=args.year,
+            )
+            update_report_file_metadata(
+                sb,
+                report_id=report["id"],
+                storage_path=meta["storage_path"],
+                size_bytes=meta["size_bytes"],
+                checksum=meta["checksum"],
+                mime_type=meta["content_type"],
+            )
+            logger.info("Storage: %s", meta["storage_path"])
+
+    # 4. Extract
     doc = extract_pdf(pdf_path)
     sentences = segment_sentences([(p.page_number, p.text) for p in doc.pages])
     claims = extract_claims(sentences)
 
-    # 4. Persist
+    # 5. Persist claims
     inserted = replace_claims_for_report(
         sb,
         company_id=company["id"],

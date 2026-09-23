@@ -38,3 +38,27 @@ def upsert_report(
     }
     res = sb.table("esg_reports").insert(row).execute()
     return res.data[0]
+
+
+def update_report_file_metadata(
+    sb: Client,
+    *,
+    report_id: str,
+    storage_path: str,
+    size_bytes: int,
+    checksum: str,
+    mime_type: str,
+) -> dict[str, Any]:
+    """Attach storage metadata to an existing esg_reports row."""
+    res = (
+        sb.table("esg_reports")
+        .update({
+            "file_path": storage_path,
+            "file_size_bytes": size_bytes,
+            "checksum_sha256": checksum,
+            "mime_type": mime_type,
+        })
+        .eq("id", report_id)
+        .execute()
+    )
+    return res.data[0] if res.data else {}
