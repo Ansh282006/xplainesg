@@ -1,0 +1,2 @@
+﻿# XplainESG - ML/NLP runtime dependencies
+pypdf==5.1.0
