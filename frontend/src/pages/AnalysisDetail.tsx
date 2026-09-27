@@ -1,4 +1,4 @@
-﻿import { Link, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
 
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
 import { formatDate, formatScore, riskTone } from '@/lib/utils'
 import type { Analysis } from '@/types'
+import { ExplanationPanel } from '@/components/ExplanationPanel'
 
 export function AnalysisDetail() {
   const { id } = useParams<{ id: string }>()
@@ -87,6 +88,8 @@ export function AnalysisDetail() {
           </p>
         </Card>
       </div>
+
+      <ExplanationPanel analysisId={a.id} />
 
       {a.feature_vector && (
         <Card>

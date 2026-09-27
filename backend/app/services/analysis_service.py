@@ -1,4 +1,4 @@
-﻿"""Orchestrates a single analysis run: claims -> scores -> analyses row."""
+"""Orchestrates a single analysis run: claims -> scores -> analyses row."""
 from __future__ import annotations
 
 from typing import Any
@@ -6,6 +6,8 @@ from typing import Any
 from supabase import Client
 
 from app.core import scoring
+from app.explainability.claim_explainer import explain_with_shap
+from app.services.explanation_service import save_explanation
 from app.ml.claim_classifier import (
     ACTIVE_MODEL_NAME,
     load_active_model,
@@ -177,6 +179,35 @@ def run_analysis(
         risk.get("risk"),
         risk.get("score"),
     )
+
+    # --- Persist SHAP explanations for the top-3 highest-strength claims ---
+    # This is best-effort: failures do not roll back the analysis.
+    if classifier is not None and claims:
+        try:
+            top_claims = sorted(
+                claims,
+                key=lambda c: float(c.get("claim_strength") or 0.0),
+                reverse=True,
+            )[:3]
+            saved_total = 0
+            for claim in top_claims:
+                text = (claim.get("sentence") or "").strip()
+                if not text:
+                    continue
+                try:
+                    shap_out = explain_with_shap(text, top_k=8)
+                    feats = shap_out.get("features") or []
+                    saved_total += save_explanation(
+                        sb,
+                        analysis_id=analysis_row["id"],
+                        explanation_type="SHAP",
+                        features=feats,
+                    )
+                except Exception as inner:
+                    logger.warning("SHAP persistence skipped for claim: %s", inner)
+            logger.info("Persisted %d SHAP rows for analysis %s", saved_total, analysis_row["id"])
+        except Exception as exc:
+            logger.warning("SHAP persistence block failed: %s", exc)
 
     return {
         "analysis": analysis_row,

@@ -1,4 +1,4 @@
-﻿"""Explanation endpoints — SHAP and LIME for a given analysis."""
+"""Explanation endpoints — SHAP and LIME for a given analysis."""
 from __future__ import annotations
 
 from uuid import UUID
@@ -49,3 +49,17 @@ async def lime_explanation(analysis_id: UUID) -> dict:
         return explain_with_lime(claim["sentence"], top_k=10)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/{analysis_id}/persisted")
+async def list_explanations(analysis_id: UUID) -> dict:
+    """Return persisted explanation rows for an analysis."""
+    from app.database.supabase_client import get_supabase_admin as _sb
+    sb = _sb()
+    res = (
+        sb.table("explanations")
+        .select("*")
+        .eq("analysis_id", str(analysis_id))
+        .execute()
+    )
+    return {"items": res.data or [], "total": len(res.data or [])}

@@ -1,4 +1,4 @@
-﻿"""
+"""
 SHAP + LIME explanations for the trained claim classifier.
 
 Both explainers operate on the SAME fitted Pipeline loaded via
@@ -55,17 +55,22 @@ def explain_with_shap(
     X = tfidf.transform([sentence])
     feature_names = np.array(tfidf.get_feature_names_out())
 
-    # Choose explainer based on classifier type
+    # Choose explainer based on classifier type.
+    # NOTE: shap.TreeExplainer had a numpy 2.x incompatibility. We use the
+    # modern shap.Explainer API (auto-selects the right backend) which handles
+    # current numpy cleanly.
     clf_class = clf.__class__.__name__
     try:
         if clf_class in ("RandomForestClassifier", "XGBClassifier"):
-            explainer = shap.TreeExplainer(clf)
-            shap_values = explainer.shap_values(X)
+            # Modern API — handles numpy 2.x
+            explainer = shap.Explainer(clf, feature_names=np.array(tfidf.get_feature_names_out()))
+            exp = explainer(X)
+            # exp.values shape: (n_samples, n_features) for binary
+            shap_values = np.asarray(exp.values)
         elif clf_class == "LogisticRegression":
             explainer = shap.LinearExplainer(clf, X, feature_perturbation="interventional")
             shap_values = explainer.shap_values(X)
         else:
-            # Fallback: KernelExplainer — slow but works for anything
             explainer = shap.KernelExplainer(clf.predict_proba, X)
             shap_values = explainer.shap_values(X)
     except Exception as exc:
