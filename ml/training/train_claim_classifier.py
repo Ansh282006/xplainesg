@@ -42,6 +42,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import StratifiedKFold, cross_val_score, train_test_split
 from sklearn.pipeline import Pipeline
+from xgboost import XGBClassifier
 
 # Paths
 REPO = Path(__file__).resolve().parents[2]
@@ -160,7 +161,7 @@ def train_one(
     print(f"  F1 (macro):        {metrics['f1_macro']:.4f}")
     print(f"  F1 (weighted):     {metrics['f1_weighted']:.4f}")
     print(f"  ROC-AUC:           {metrics['roc_auc']:.4f}")
-    print(f"  CV F1 (5-fold):    {metrics['cv_f1_mean']:.4f} Â± {metrics['cv_f1_std']:.4f}")
+    print(f"  CV F1 (5-fold):    {metrics['cv_f1_mean']:.4f} Ã‚Â± {metrics['cv_f1_std']:.4f}")
     print(f"  Confusion matrix [[unsub],[sub]]:")
     for row in metrics["confusion_matrix"]:
         print(f"    {row}")
@@ -229,6 +230,21 @@ def main() -> None:
         ),
     ))
 
+    results.append(train_one(
+        "tfidf-xgb-v1",
+        X_train, y_train, X_test, y_test,
+        XGBClassifier(
+            n_estimators=400,
+            max_depth=6,
+            learning_rate=0.1,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            eval_metric="logloss",
+            random_state=RANDOM_STATE,
+            n_jobs=-1,
+        ),
+    ))
+
     update_registry(results)
 
     print()
@@ -237,9 +253,9 @@ def main() -> None:
     print("=" * 60)
     print(f"{'Model':15s}  {'F1':>6s}  {'AUC':>6s}  {'CV F1':>12s}")
     for r in results:
-        print(f"{r['model']:15s}  {r['f1_macro']:.4f}  {r['roc_auc']:.4f}  {r['cv_f1_mean']:.4f}Â±{r['cv_f1_std']:.4f}")
+        print(f"{r['model']:15s}  {r['f1_macro']:.4f}  {r['roc_auc']:.4f}  {r['cv_f1_mean']:.4f}Ã‚Â±{r['cv_f1_std']:.4f}")
     print()
-    print("NOTE: baseline-v0 (rule-based) has no test metric â€” it is not a trainable model.")
+    print("NOTE: baseline-v0 (rule-based) has no test metric Ã¢â‚¬â€ it is not a trainable model.")
     print("      Compare only against each other on the same held-out 20%.")
 
 

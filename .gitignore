@@ -62,3 +62,7 @@ ml/datasets/processed/*
 # ---------- ML model binaries (rebuilt from scripts) ----------
 ml/models/**/*.joblib
 ml/models/**/*.pkl
+
+# ---------- ML binaries (rebuilt from training scripts) ----------
+ml/models/**/*.joblib
+ml/models/**/*.pkl

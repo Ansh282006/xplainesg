@@ -5,8 +5,7 @@ from typing import Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Resolve .env path relative to THIS file so it works no matter the CWD.
-# backend/app/core/config.py -> parents[2] is backend/
+# Resolve .env relative to THIS file so it works no matter the CWD.
 _ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 
 
@@ -18,14 +17,25 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    # --- Supabase (server side) ---
     supabase_url: str = Field(..., alias="SUPABASE_URL")
     supabase_service_role_key: str = Field(..., alias="SUPABASE_SERVICE_ROLE_KEY")
 
+    # --- App ---
     app_env: Literal["development", "staging", "production"] = Field(
         "development", alias="APP_ENV"
     )
     log_level: str = Field("INFO", alias="LOG_LEVEL")
     cors_origins: str = Field("http://localhost:5180", alias="CORS_ORIGINS")
+
+    # --- ML ---
+    ml_inference_url: str = Field("", alias="ML_INFERENCE_URL")
+    model_path: str = Field("../ml/models", alias="MODEL_PATH")
+    model_version: str = Field("", alias="MODEL_VERSION")
+    huggingface_token: str = Field("", alias="HUGGINGFACE_TOKEN")
+
+    # --- Demo ---
+    demo_mode: bool = Field(False, alias="DEMO_MODE")
 
     @field_validator("supabase_url")
     @classmethod
