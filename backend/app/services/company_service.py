@@ -1,5 +1,4 @@
-﻿"""Company CRUD helpers."""
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
@@ -16,7 +15,6 @@ def upsert_company(
     industry: str | None = None,
     website: str | None = None,
 ) -> dict[str, Any]:
-    """Find by ticker (if given), else by exact name. Create if missing."""
     q = sb.table("companies").select("*")
     q = q.eq("ticker", ticker) if ticker else q.eq("name", name)
     existing = q.limit(1).execute()

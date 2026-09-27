@@ -1,5 +1,4 @@
-﻿"""Persist extracted claims to esg_claims. Idempotent per report."""
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
@@ -15,7 +14,6 @@ def replace_claims_for_report(
     report_id: str,
     claims: list[Claim],
 ) -> int:
-    """Delete existing claims for this report, then bulk-insert the new set."""
     sb.table("esg_claims").delete().eq("report_id", report_id).execute()
 
     if not claims:
@@ -41,7 +39,6 @@ def replace_claims_for_report(
         for c in claims
     ]
 
-    # Supabase recommends batching inserts to stay under payload limits.
     BATCH = 200
     inserted = 0
     for i in range(0, len(rows), BATCH):

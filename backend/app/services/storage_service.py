@@ -1,5 +1,4 @@
-﻿"""Supabase Storage helpers for ESG report PDFs."""
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 from pathlib import Path
@@ -28,17 +27,6 @@ def upload_report_pdf(
     ticker: str,
     year: int,
 ) -> dict:
-    """
-    Upload a PDF to Supabase Storage and return its metadata.
-
-    Returns:
-        {
-            "storage_path": "INFY/2024/INFY_2024_integrated.pdf",
-            "size_bytes":  11304000,
-            "checksum":    "sha256hex",
-            "content_type": "application/pdf",
-        }
-    """
     local_path = Path(local_path)
     if not local_path.exists():
         raise FileNotFoundError(f"PDF not found: {local_path}")
@@ -51,14 +39,10 @@ def upload_report_pdf(
 
     content_type = "application/pdf"
 
-    # Supabase storage upsert (overwrite existing file at same path)
-    res = sb.storage.from_(BUCKET).upload(
+    sb.storage.from_(BUCKET).upload(
         path=storage_path,
         file=file_bytes,
-        file_options={
-            "content-type": content_type,
-            "upsert": "true",
-        },
+        file_options={"content-type": content_type, "upsert": "true"},
     )
 
     metadata = {
@@ -67,19 +51,13 @@ def upload_report_pdf(
         "checksum": _sha256(local_path),
         "content_type": content_type,
     }
-    logger.info(
-        "Uploaded %s -> %s (%d bytes)",
-        filename, storage_path, metadata["size_bytes"],
-    )
+    logger.info("Uploaded %s -> %s (%d bytes)", filename, storage_path, metadata["size_bytes"])
     return metadata
 
 
 def create_signed_url(sb: Client, storage_path: str, expires_in: int = 3600) -> str:
-    """Return a signed, time-limited URL for a private file."""
     res = sb.storage.from_(BUCKET).create_signed_url(storage_path, expires_in)
-    # supabase-py returns either {"signedURL": ...} or {"signed_url": ...} depending on version
     if isinstance(res, dict):
         return res.get("signedURL") or res.get("signed_url") or ""
-    # older client returns object with .data
     data = getattr(res, "data", None) or {}
     return data.get("signedURL") or data.get("signed_url") or ""

@@ -1,5 +1,4 @@
-﻿"""ESG report CRUD helpers."""
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
@@ -15,7 +14,6 @@ def upsert_report(
     report_type: str,
     file_path: str | None = None,
 ) -> dict[str, Any]:
-    """Find by (company_id, report_year, report_title). Create if missing."""
     existing = (
         sb.table("esg_reports")
         .select("*")
@@ -49,7 +47,6 @@ def update_report_file_metadata(
     checksum: str,
     mime_type: str,
 ) -> dict[str, Any]:
-    """Attach storage metadata to an existing esg_reports row."""
     res = (
         sb.table("esg_reports")
         .update({
