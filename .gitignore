@@ -53,4 +53,8 @@ frontend/dist/
 frontend/.env
 
 
+
+# ---------- ML labelled datasets (keep metadata + labelled CSVs, ignore rest) ----------
+!ml/datasets/processed/
+ml/datasets/processed/*
 !ml/datasets/processed/claims_to_label.csv
