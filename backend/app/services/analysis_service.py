@@ -1,4 +1,4 @@
-"""Orchestrates a single analysis run: claims -> scores -> analyses row."""
+﻿"""Orchestrates a single analysis run: claims -> scores -> analyses row -> explanations."""
 from __future__ import annotations
 
 from typing import Any
@@ -6,13 +6,9 @@ from typing import Any
 from supabase import Client
 
 from app.core import scoring
-from app.explainability.claim_explainer import explain_with_shap
+from app.explainability.claim_explainer import explain_with_lime, explain_with_shap
+from app.ml.claim_classifier import load_active_model, predict_unsubstantiated_probabilities
 from app.services.explanation_service import save_explanation
-from app.ml.claim_classifier import (
-    ACTIVE_MODEL_NAME,
-    load_active_model,
-    predict_unsubstantiated_probabilities,
-)
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -42,17 +38,7 @@ def _load_indicators(sb: Client, company_id: str, year: int) -> dict[str, Any] |
     return res.data[0] if res.data else None
 
 
-def _classifier_risk(
-    claims: list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    """
-    Use the trained model to compute a report-level greenwashing risk.
-
-    Aggregation: strength-weighted mean of P(unsubstantiated) across claims.
-    High-strength unsubstantiated claims are the strongest signal.
-
-    Returns None if the model is not available — caller falls back to baseline.
-    """
+def _classifier_risk(claims: list[dict[str, Any]]) -> dict[str, Any] | None:
     pipeline, metadata = load_active_model()
     if pipeline is None or not claims:
         return None
@@ -69,7 +55,6 @@ def _classifier_risk(
 
     weighted_mean = sum(p * w for p, w in zip(probs, weights)) / total_weight
 
-    # Same thresholds as baseline for comparability.
     if weighted_mean >= scoring.RISK_HIGH_THRESHOLD:
         risk = "HIGH"
     elif weighted_mean >= scoring.RISK_MEDIUM_THRESHOLD:
@@ -78,7 +63,7 @@ def _classifier_risk(
         risk = "LOW"
 
     return {
-        "model": ACTIVE_MODEL_NAME,
+        "model": metadata.get("model") if metadata else "unknown",
         "metadata": {
             "f1_macro": metadata.get("f1_macro") if metadata else None,
             "roc_auc": metadata.get("roc_auc") if metadata else None,
@@ -89,6 +74,38 @@ def _classifier_risk(
         "n_claims": len(claims),
         "per_claim_mean": round(sum(probs) / len(probs), 4),
     }
+
+
+def _persist_explanations(
+    sb: Client,
+    analysis_id: str,
+    claims: list[dict[str, Any]],
+    top_n: int = 2,
+) -> dict[str, int]:
+    """Best-effort: persist SHAP and LIME for the top-N highest-strength claims."""
+    counts = {"SHAP": 0, "LIME": 0}
+    top_claims = sorted(
+        claims, key=lambda c: float(c.get("claim_strength") or 0.0), reverse=True
+    )[:top_n]
+
+    for claim in top_claims:
+        text = (claim.get("sentence") or "").strip()
+        if not text:
+            continue
+
+        for kind, fn in (("SHAP", explain_with_shap), ("LIME", explain_with_lime)):
+            try:
+                out = fn(text, top_k=8)
+                feats = out.get("features") or []
+                counts[kind] += save_explanation(
+                    sb,
+                    analysis_id=analysis_id,
+                    explanation_type=kind,
+                    features=feats,
+                )
+            except Exception as exc:
+                logger.warning("%s persistence skipped: %s", kind, exc)
+    return counts
 
 
 def run_analysis(
@@ -108,7 +125,6 @@ def run_analysis(
     if indicators is None:
         indicators = _load_indicators(sb, company_id, year)
 
-    # --- Scores ---
     credibility = scoring.compute_claim_credibility(claims)
     performance = scoring.compute_esg_performance(indicators)
     trust = scoring.compute_trust_score(
@@ -116,7 +132,6 @@ def run_analysis(
         credibility_score=credibility.get("score"),
     )
 
-    # --- Greenwashing risk: prefer trained model, fall back to baseline ---
     classifier = _classifier_risk(claims)
     if classifier is not None:
         risk = {
@@ -180,34 +195,16 @@ def run_analysis(
         risk.get("score"),
     )
 
-    # --- Persist SHAP explanations for the top-3 highest-strength claims ---
-    # This is best-effort: failures do not roll back the analysis.
-    if classifier is not None and claims:
+    # --- Persist explanations (best-effort, does not affect the analysis row) ---
+    if claims:
         try:
-            top_claims = sorted(
-                claims,
-                key=lambda c: float(c.get("claim_strength") or 0.0),
-                reverse=True,
-            )[:3]
-            saved_total = 0
-            for claim in top_claims:
-                text = (claim.get("sentence") or "").strip()
-                if not text:
-                    continue
-                try:
-                    shap_out = explain_with_shap(text, top_k=8)
-                    feats = shap_out.get("features") or []
-                    saved_total += save_explanation(
-                        sb,
-                        analysis_id=analysis_row["id"],
-                        explanation_type="SHAP",
-                        features=feats,
-                    )
-                except Exception as inner:
-                    logger.warning("SHAP persistence skipped for claim: %s", inner)
-            logger.info("Persisted %d SHAP rows for analysis %s", saved_total, analysis_row["id"])
+            counts = _persist_explanations(sb, analysis_row["id"], claims, top_n=2)
+            logger.info(
+                "Persisted explanations for %s: SHAP=%d, LIME=%d rows",
+                analysis_row["id"], counts["SHAP"], counts["LIME"],
+            )
         except Exception as exc:
-            logger.warning("SHAP persistence block failed: %s", exc)
+            logger.warning("Explanation persistence failed: %s", exc)
 
     return {
         "analysis": analysis_row,

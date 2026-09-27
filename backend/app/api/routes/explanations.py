@@ -1,4 +1,4 @@
-"""Explanation endpoints — SHAP and LIME for a given analysis."""
+﻿"""Explanation endpoints — SHAP and LIME for a given analysis."""
 from __future__ import annotations
 
 from uuid import UUID
@@ -11,7 +11,7 @@ from app.explainability.claim_explainer import explain_with_lime, explain_with_s
 router = APIRouter()
 
 
-def _load_analysis_and_top_claim(analysis_id: UUID) -> tuple[dict, dict]:
+def _load_analysis_and_top_claim(analysis_id: UUID):
     sb = get_supabase_admin()
     a_res = (
         sb.table("analyses").select("*").eq("id", str(analysis_id)).limit(1).execute()
@@ -33,6 +33,19 @@ def _load_analysis_and_top_claim(analysis_id: UUID) -> tuple[dict, dict]:
     return analysis, c_res.data[0]
 
 
+@router.get("/{analysis_id}/persisted")
+async def list_explanations(analysis_id: UUID) -> dict:
+    """Return persisted explanation rows for an analysis (from the explanations table)."""
+    sb = get_supabase_admin()
+    res = (
+        sb.table("explanations")
+        .select("*")
+        .eq("analysis_id", str(analysis_id))
+        .execute()
+    )
+    return {"items": res.data or [], "total": len(res.data or [])}
+
+
 @router.get("/{analysis_id}/shap")
 async def shap_explanation(analysis_id: UUID) -> dict:
     _, claim = _load_analysis_and_top_claim(analysis_id)
@@ -49,17 +62,3 @@ async def lime_explanation(analysis_id: UUID) -> dict:
         return explain_with_lime(claim["sentence"], top_k=10)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-
-@router.get("/{analysis_id}/persisted")
-async def list_explanations(analysis_id: UUID) -> dict:
-    """Return persisted explanation rows for an analysis."""
-    from app.database.supabase_client import get_supabase_admin as _sb
-    sb = _sb()
-    res = (
-        sb.table("explanations")
-        .select("*")
-        .eq("analysis_id", str(analysis_id))
-        .execute()
-    )
-    return {"items": res.data or [], "total": len(res.data or [])}

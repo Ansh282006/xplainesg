@@ -1,17 +1,23 @@
-﻿import { useQuery } from '@tanstack/react-query'
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+﻿import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import {
+  Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
+} from 'recharts'
 import { Brain, Sparkles } from 'lucide-react'
 
 import { api } from '@/lib/api'
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Spinner } from '@/components/ui/Spinner'
+import { cn } from '@/lib/utils'
 
-interface Row {
+interface ExplanationRow {
   id: string
+  analysis_id: string
+  explanation_type: 'SHAP' | 'LIME'
   feature_name: string
   contribution: number
   direction: 'positive' | 'negative' | 'neutral' | null
-  explanation_type: string
+  created_at: string
 }
 
 interface Props {
@@ -19,53 +25,23 @@ interface Props {
 }
 
 export function ExplanationPanel({ analysisId }: Props) {
-  const { data, isLoading } = useQuery({
-    queryKey: ['explanations', analysisId],
+  const [tab, setTab] = useState<'SHAP' | 'LIME'>('SHAP')
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['explanations', analysisId, tab],
     queryFn: () =>
-      api.get<{ items: Row[]; total: number }>(
+      api.get<{ items: ExplanationRow[]; total: number }>(
         `/explanations/${analysisId}/persisted`,
       ),
   })
 
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader><CardTitle>Model explanation (SHAP)</CardTitle></CardHeader>
-        <CardBody className="h-40 flex items-center justify-center">
-          <Spinner />
-        </CardBody>
-      </Card>
-    )
-  }
+  const rows = (data?.items ?? []).filter((r) => r.explanation_type === tab)
 
-  const rows = data?.items ?? []
-
-  if (rows.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Brain className="h-4 w-4" /> Model explanation
-          </CardTitle>
-        </CardHeader>
-        <CardBody>
-          <p className="text-sm text-slate-500">
-            No SHAP explanations persisted for this analysis. SHAP is
-            computed on the top-strength claims and stored as feature
-            contributions.
-          </p>
-        </CardBody>
-      </Card>
-    )
-  }
-
-  // Aggregate by feature — take the largest absolute contribution
-  // across the top-3 claims, so the chart shows the most influential
-  // tokens overall.
-  const byFeature = new Map<string, Row>()
+  // Aggregate by feature_name — pick largest absolute contribution
+  const byFeature = new Map<string, ExplanationRow>()
   for (const r of rows) {
-    const existing = byFeature.get(r.feature_name)
-    if (!existing || Math.abs(r.contribution) > Math.abs(existing.contribution)) {
+    const prev = byFeature.get(r.feature_name)
+    if (!prev || Math.abs(r.contribution) > Math.abs(prev.contribution)) {
       byFeature.set(r.feature_name, r)
     }
   }
@@ -76,43 +52,99 @@ export function ExplanationPanel({ analysisId }: Props) {
     .map((r) => ({
       name: r.feature_name,
       value: r.contribution,
-      direction: r.direction,
+      positive: r.contribution > 0,
     }))
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4" /> Model explanation (SHAP)
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" /> Model explanation
+          </CardTitle>
+          <div className="flex gap-1 rounded-lg border border-slate-200 p-0.5">
+            {(['SHAP', 'LIME'] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => setTab(k)}
+                className={cn(
+                  'rounded-md px-3 py-1 text-xs font-medium transition-colors',
+                  tab === k
+                    ? 'bg-brand-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-100',
+                )}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
+        </div>
       </CardHeader>
       <CardBody>
-        <p className="mb-4 text-xs text-slate-500">
-          Top feature contributions from the trained classifier. Negative values
-          push toward <span className="font-medium text-eco-700">substantiated</span>;
-          positive values push toward{' '}
-          <span className="font-medium text-red-700">unsubstantiated</span>.
-          These explain the model, not the company&apos;s intent.
-        </p>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartRows} layout="vertical" margin={{ left: 80, right: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis type="number" stroke="#64748b" fontSize={11} />
-              <YAxis type="category" dataKey="name" stroke="#64748b" fontSize={11} width={100} />
-              <Tooltip />
-              <Bar dataKey="value">
-                {chartRows.map((r) => (
-                  <Cell key={r.name} fill={r.value < 0 ? '#1f9765' : '#c0392b'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <p className="mt-4 text-xs text-slate-500">
-          SHAP values explain which tokens the trained model used. They are not
-          proof of intent.
-        </p>
+        {isLoading && (
+          <div className="flex h-40 items-center justify-center"><Spinner /></div>
+        )}
+
+        {error && (
+          <p className="text-sm text-red-700">
+            Failed to load explanations.{' '}
+            {error instanceof Error ? error.message : ''}
+          </p>
+        )}
+
+        {!isLoading && !error && chartRows.length === 0 && (
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <Brain className="h-5 w-5 text-slate-400" />
+            <p className="text-sm text-slate-500">
+              No {tab} explanations persisted for this analysis.
+            </p>
+            <p className="text-xs text-slate-400">
+              Explanations are generated on the top-strength claims at analysis time.
+              Re-run the analysis to generate them.
+            </p>
+          </div>
+        )}
+
+        {chartRows.length > 0 && (
+          <>
+            <p className="mb-4 text-xs text-slate-500">
+              Top feature contributions from the trained classifier ({tab}).{' '}
+              <span className="font-medium text-eco-700">Green (negative)</span> pushes
+              toward <em>substantiated</em>;{' '}
+              <span className="font-medium text-red-700">red (positive)</span> pushes
+              toward <em>unsubstantiated</em>. These explain the model, not the
+              company&apos;s intent.
+            </p>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={chartRows}
+                  layout="vertical"
+                  margin={{ left: 100, right: 20, top: 10, bottom: 10 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis type="number" stroke="#64748b" fontSize={11} />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    stroke="#64748b"
+                    fontSize={11}
+                    width={120}
+                  />
+                  <Tooltip formatter={(v: number) => v.toFixed(4)} />
+                  <Bar dataKey="value">
+                    {chartRows.map((r) => (
+                      <Cell key={r.name} fill={r.value < 0 ? '#1f9765' : '#c0392b'} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <p className="mt-4 text-xs text-slate-400">
+              {rows.length} explanation rows · method: {tab}
+            </p>
+          </>
+        )}
       </CardBody>
     </Card>
   )

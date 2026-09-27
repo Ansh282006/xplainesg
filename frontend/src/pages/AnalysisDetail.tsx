@@ -27,7 +27,7 @@ export function AnalysisDetail() {
       <Card className="p-6">
         <p className="text-sm text-red-700">Analysis not found.</p>
         <Link to="/dashboard" className="mt-2 inline-block text-sm text-brand-700 hover:underline">
-          ← Back to dashboard
+          â† Back to dashboard
         </Link>
       </Card>
     )
@@ -50,8 +50,8 @@ export function AnalysisDetail() {
               Analysis result
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Model <span className="font-mono">{a.model_version}</span> ·
-              created {formatDate(a.created_at)} · status {a.status}
+              Model <span className="font-mono">{a.model_version}</span> Â·
+              created {formatDate(a.created_at)} Â· status {a.status}
             </p>
           </div>
           {a.greenwashing_risk && (
@@ -72,7 +72,7 @@ export function AnalysisDetail() {
         <Card className="p-5">
           <p className="label">Greenwashing probability</p>
           <p className="mt-2 text-3xl font-semibold tabular-nums text-slate-900">
-            {a.greenwashing_probability?.toFixed(4) ?? '—'}
+            {a.greenwashing_probability?.toFixed(4) ?? 'â€”'}
           </p>
         </Card>
         <Card className="p-5">
