@@ -5,3 +5,8 @@ pypdf==5.1.0
 
 # --- Phase 3: sentence segmentation ---
 spacy==3.8.2
+
+# --- Phase 4: ML training ---
+scikit-learn==1.6.0
+pandas==2.2.3
+joblib==1.4.2
