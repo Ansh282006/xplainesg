@@ -27,24 +27,28 @@ async def list_companies(
         query = query.eq("sector", sector)
     query = query.order("name").range(offset, offset + limit - 1)
     res = query.execute()
-    return {
-        "items": res.data or [],
-        "total": res.count or 0,
-        "limit": limit,
-        "offset": offset,
-    }
+    return {"items": res.data or [], "total": res.count or 0, "limit": limit, "offset": offset}
 
 
 @router.get("/{company_id}")
 async def get_company(company_id: UUID) -> dict:
     sb = get_supabase_admin()
     res = (
-        sb.table("company_overview")
-        .select("*")
-        .eq("id", str(company_id))
-        .limit(1)
-        .execute()
+        sb.table("company_overview").select("*").eq("id", str(company_id)).limit(1).execute()
     )
     if not res.data:
         raise HTTPException(status_code=404, detail="Company not found")
     return res.data[0]
+
+
+@router.get("/{company_id}/history")
+async def company_history(company_id: UUID) -> dict:
+    sb = get_supabase_admin()
+    res = (
+        sb.table("analyses")
+        .select("*")
+        .eq("company_id", str(company_id))
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return {"items": res.data or [], "total": len(res.data or [])}
