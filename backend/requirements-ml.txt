@@ -14,3 +14,6 @@ joblib==1.4.2
 # --- Phase 5: explainability ---
 shap==0.46.0
 lime==0.2.0.1
+
+# --- numpy pin: shap 0.46 has issues with numpy 2.x ---
+numpy<2
