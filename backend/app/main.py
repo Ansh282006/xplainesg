@@ -1,7 +1,7 @@
 ﻿from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import analysis, auth, health, indicators
+from app.api.routes import analysis, auth, companies, dashboard, health, indicators
 from app.core.config import get_settings
 from app.utils.logging import configure_logging, get_logger
 
@@ -31,6 +31,8 @@ app.add_middleware(
 
 app.include_router(health.router, tags=["health"])
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(companies.router, prefix="/companies", tags=["companies"])
+app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
 app.include_router(indicators.router, prefix="/indicators", tags=["indicators"])
 

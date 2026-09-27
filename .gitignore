@@ -41,3 +41,14 @@ supabase/.temp/
 .idea/
 .DS_Store
 Thumbs.db
+# local dev temp
+.token
+auth_output.txt
+indicators.json
+analysis.json
+
+# frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
