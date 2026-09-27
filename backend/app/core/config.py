@@ -1,13 +1,18 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Resolve .env path relative to THIS file so it works no matter the CWD.
+# backend/app/core/config.py -> parents[2] is backend/
+_ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_ENV_PATH),
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
@@ -20,7 +25,7 @@ class Settings(BaseSettings):
         "development", alias="APP_ENV"
     )
     log_level: str = Field("INFO", alias="LOG_LEVEL")
-    cors_origins: str = Field("http://localhost:5173", alias="CORS_ORIGINS")
+    cors_origins: str = Field("http://localhost:5180", alias="CORS_ORIGINS")
 
     @field_validator("supabase_url")
     @classmethod

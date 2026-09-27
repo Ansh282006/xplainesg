@@ -58,3 +58,7 @@ frontend/.env
 !ml/datasets/processed/
 ml/datasets/processed/*
 !ml/datasets/processed/claims_to_label.csv
+
+# ---------- ML model binaries (rebuilt from scripts) ----------
+ml/models/**/*.joblib
+ml/models/**/*.pkl
