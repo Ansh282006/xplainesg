@@ -1,4 +1,4 @@
-﻿"""Parse claim sentences to extract structured metric statements."""
+"""Parse claim sentences to extract structured metric statements."""
 from __future__ import annotations
 
 import re
@@ -7,53 +7,42 @@ from dataclasses import dataclass
 METRIC_PATTERNS = {
     "carbon_emissions": re.compile(
         r"\b(carbon emissions?|scope\s*[123] emissions?|ghg emissions?|"
-        r"greenhouse gas emissions?|co2 emissions?|carbon footprint)\b", re.IGNORECASE,
-    ),
+        r"greenhouse gas emissions?|co2 emissions?|carbon footprint)\b", re.IGNORECASE),
     "renewable_energy_percentage": re.compile(
         r"\b(renewable energy|clean energy|green energy|solar power|wind (power|energy))\b",
-        re.IGNORECASE,
-    ),
+        re.IGNORECASE),
     "energy_consumption": re.compile(
         r"\b(energy consumption|electricity consumption|energy usage|energy intensity)\b",
-        re.IGNORECASE,
-    ),
+        re.IGNORECASE),
     "water_consumption": re.compile(
-        r"\b(water (consumption|usage|withdrawal|intensity|demand))\b", re.IGNORECASE,
-    ),
+        r"\b(water (consumption|usage|withdrawal|intensity|demand))\b", re.IGNORECASE),
     "waste_generated": re.compile(
         r"\b(waste (generation|reduction)|landfill|plastic waste|waste recycled)\b",
-        re.IGNORECASE,
-    ),
+        re.IGNORECASE),
     "employee_count": re.compile(
         r"\b(employee count|headcount|total employees|workforce of|employ(?:s|ed|ing)\s+\d)\b",
-        re.IGNORECASE,
-    ),
+        re.IGNORECASE),
     "diversity_percentage": re.compile(
         r"\b(gender diversity|women (in|on|representing|accounting for)|"
-        r"female (representation|employees|workforce)|women employees?)\b", re.IGNORECASE,
-    ),
+        r"female (representation|employees|workforce)|women employees?)\b", re.IGNORECASE),
     "board_independence": re.compile(r"\b(board independence|independent directors?)\b", re.IGNORECASE),
     "board_diversity": re.compile(r"\b(board diversity|female directors?|women on the board)\b", re.IGNORECASE),
     "employee_turnover": re.compile(r"\b(employee turnover|attrition rate|employee retention)\b", re.IGNORECASE),
     "training_hours": re.compile(r"\b(training hours|learning (and|&) development hours)\b", re.IGNORECASE),
     "community_investment": re.compile(r"\b(community investment|csr (spend|spending))\b", re.IGNORECASE),
     "workplace_incidents": re.compile(
-        r"\b(workplace incidents?|safety incidents?|lost time injur\w*|fatalit\w*)\b", re.IGNORECASE,
-    ),
+        r"\b(workplace incidents?|safety incidents?|lost time injur\w*|fatalit\w*)\b", re.IGNORECASE),
 }
 
 DIRECTION_PATTERNS = {
     "reduction": re.compile(
         r"\b(reduc\w*|lower\w*|cut\w*|decreas\w*|avoid\w*|minimi[sz]\w*|eliminat\w*|declin\w*)\b",
-        re.IGNORECASE,
-    ),
+        re.IGNORECASE),
     "increase": re.compile(
-        r"\b(increas\w*|grew|grown|rais\w*|expanded|doubl\w*|tripl\w*|surge\w*)\b", re.IGNORECASE,
-    ),
+        r"\b(increas\w*|grew|grown|rais\w*|expanded|doubl\w*|tripl\w*|surge\w*)\b", re.IGNORECASE),
     "commitment": re.compile(
         r"\b(commit\w*|pledge\w*|target\w*|aim\w*|goal\w*|plan\w*|intend\w*|will|striv\w*)\b",
-        re.IGNORECASE,
-    ),
+        re.IGNORECASE),
 }
 
 VALUE_PCT = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*(?:%|percent|per cent)", re.IGNORECASE)
@@ -69,7 +58,20 @@ NOISE_INDICATORS = re.compile(
     r"\bdate of (meeting|notice)\b|\bcolumn \d\b|\btable \d\b)", re.IGNORECASE,
 )
 
-# Words that end a clause
+# CHANGE-frame verbs — if any of these appear near the metric, it's a CHANGE claim
+CHANGE_VERBS = re.compile(
+    r"\b(increas\w*|decreas\w*|reduc\w*|lower\w*|cut|grew|grown|rais\w*|expand\w*|"
+    r"doubl\w*|tripl\w*|surge\w*|declin\w*|rose|risen|fell|fallen|improved|worsened|"
+    r"avoided|eliminated|minimi[sz]\w*|declining|dropping)\b",
+    re.IGNORECASE,
+)
+# LEVEL-frame verbs — states of being
+LEVEL_VERBS = re.compile(
+    r"\b(is|are|was|were|stands? at|consist\w* of|account\w* for|represent\w*|"
+    r"comprise\w*|constitute\w*|reach\w*|reached|maintain\w*)\b",
+    re.IGNORECASE,
+)
+
 CLAUSE_SPLIT = re.compile(r"[,;:\.\u2014\u2013]")
 
 
@@ -82,6 +84,7 @@ class ClaimMetric:
     unit: str | None
     year: int | None
     confidence: float
+    claim_type: str  # 'level' | 'change' | 'unknown'
 
 
 def _extract_direction(text: str) -> str | None:
@@ -117,10 +120,6 @@ def _extract_year(text: str) -> int | None:
 
 
 def _clause_containing(text: str, pos: int) -> tuple[int, int]:
-    """
-    Return (start, end) of the clause containing character `pos`.
-    A clause is bounded by commas, semicolons, colons, or sentence-enders.
-    """
     start = 0
     for m in CLAUSE_SPLIT.finditer(text):
         if m.start() >= pos:
@@ -129,24 +128,33 @@ def _clause_containing(text: str, pos: int) -> tuple[int, int]:
     return start, len(text)
 
 
+def _classify_claim_type(text: str) -> str:
+    """
+    'change' if a change-frame verb appears (increased/reduced/grew/etc.)
+    'level'  if a level-frame verb or no change verb appears
+    Falls back to 'unknown' only if text is empty.
+    """
+    if not text.strip():
+        return "unknown"
+    if CHANGE_VERBS.search(text):
+        return "change"
+    if LEVEL_VERBS.search(text):
+        return "level"
+    # No explicit verb — but contains a %, so it's probably a level statement
+    return "level"
+
+
 def parse_claim_metric(sentence: str) -> ClaimMetric:
-    """
-    STRICT v4:
-      - Metric and value must be in the SAME clause (comma-delimited).
-      - Direction verb must also be in that clause.
-    """
     if NOISE_INDICATORS.search(sentence):
-        return ClaimMetric(None, None, None, None, None, None, 0.0)
+        return ClaimMetric(None, None, None, None, None, None, 0.0, "unknown")
 
     metric_key, m_start, m_end = _find_metric_span(sentence)
     if metric_key is None:
-        return ClaimMetric(None, None, None, None, None, None, 0.0)
+        return ClaimMetric(None, None, None, None, None, None, 0.0, "unknown")
 
-    # Restrict all further searches to the clause containing the metric
     clause_start, clause_end = _clause_containing(sentence, m_start)
     clause = sentence[clause_start:clause_end]
 
-    # Find value within the clause only
     value_spans = _find_value_spans(clause)
     best_value = None
     best_distance = None
@@ -159,6 +167,8 @@ def parse_claim_metric(sentence: str) -> ClaimMetric:
             best_distance = distance
             best_value = v
 
+    claim_type = _classify_claim_type(sentence)
+
     if best_value is None or best_distance is None or best_distance > PROXIMITY_WINDOW:
         direction = _extract_direction(clause)
         year = _extract_year(clause)
@@ -166,15 +176,15 @@ def parse_claim_metric(sentence: str) -> ClaimMetric:
         return ClaimMetric(
             direction=direction, metric=metric_key,
             value_pct=None, value_abs=None, unit=None,
-            year=year, confidence=round(confidence, 2),
+            year=year, confidence=round(confidence, 2), claim_type=claim_type,
         )
 
     value_pct, value_abs, unit = best_value[0], best_value[1], best_value[2]
     direction = _extract_direction(clause)
     year = _extract_year(clause)
 
-    # Sign flip: verb must precede the metric IN THE SAME CLAUSE
-    if value_pct is not None:
+    # Sign flip ONLY for change claims (never touch level claims)
+    if value_pct is not None and claim_type == "change":
         metric_local_start = m_start - clause_start
         metric_local_end = m_end - clause_start
         for d_name in ("reduction", "increase"):
@@ -201,5 +211,5 @@ def parse_claim_metric(sentence: str) -> ClaimMetric:
     return ClaimMetric(
         direction=direction, metric=metric_key,
         value_pct=value_pct, value_abs=value_abs, unit=unit,
-        year=year, confidence=round(confidence, 2),
+        year=year, confidence=round(confidence, 2), claim_type=claim_type,
     )
