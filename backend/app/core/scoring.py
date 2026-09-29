@@ -197,3 +197,62 @@ def compute_greenwashing_v1(
         },
         "detail": components_detail or {},
     }
+
+
+# ---------------------------------------------------------------------------
+# Public indicator weakness helper (for /analysis/preview)
+# ---------------------------------------------------------------------------
+def compute_indicator_weakness_public(indicators: dict[str, Any]) -> dict[str, Any]:
+    """
+    Returns a 0-1 weakness score computed from user-supplied indicators.
+    Higher = weaker ESG performance = more greenwashing risk.
+
+    Transparent mapping:
+      renewable_energy_percentage  -> 1 - pct/100
+      board_independence           -> 1 - pct/100
+      board_diversity              -> 1 - pct/100
+      governance_score             -> 1 - score/100
+      employee_turnover            -> turnover / 30, capped at 1.0
+    """
+    if not indicators:
+        return {"score": None, "reason": "no_indicators", "signals": {}}
+
+    signals: dict[str, float] = {}
+
+    def _get(key):
+        v = indicators.get(key)
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    ren = _get("renewable_energy_percentage")
+    if ren is not None:
+        signals["renewable_energy_percentage"] = max(0.0, 1 - ren / 100.0)
+
+    bi = _get("board_independence")
+    if bi is not None:
+        signals["board_independence"] = max(0.0, 1 - bi / 100.0)
+
+    bd = _get("board_diversity")
+    if bd is not None:
+        signals["board_diversity"] = max(0.0, 1 - bd / 100.0)
+
+    gs = _get("governance_score")
+    if gs is not None:
+        signals["governance_score"] = max(0.0, 1 - gs / 100.0)
+
+    to = _get("employee_turnover")
+    if to is not None and to > 0:
+        signals["employee_turnover"] = min(1.0, to / 30.0)
+
+    if not signals:
+        return {"score": None, "reason": "no_recognised_fields", "signals": {}}
+
+    score = round(sum(signals.values()) / len(signals), 4)
+    return {
+        "score": score,
+        "rating": round(score * 10, 2),
+        "signals": {k: round(v, 4) for k, v in signals.items()},
+        "n_signals": len(signals),
+    }

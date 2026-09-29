@@ -1,4 +1,4 @@
-﻿"""Analysis pipeline: claims + indicators -> divergence -> scores -> analysis row."""
+"""Analysis pipeline: claims + indicators -> divergence -> scores -> analysis row."""
 from __future__ import annotations
 
 from typing import Any
@@ -223,6 +223,11 @@ def run_analysis(sb, *, report_id, override_indicators=None):
         "claim_credibility_score": credibility.get("score"),
         "greenwashing_risk": greenwashing.get("risk"),
         "greenwashing_probability": greenwashing.get("score"),
+        "risk_rating": (
+            round(greenwashing.get("score") * 10, 2)
+            if greenwashing.get("score") is not None
+            else None
+        ),
         "confidence_score": None,
         "status": "completed",
         "is_demo": False,

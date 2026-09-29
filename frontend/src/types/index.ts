@@ -57,6 +57,7 @@ export interface Analysis {
   claim_credibility_score: number | null
   greenwashing_risk: RiskLevel | null
   greenwashing_probability: number | null
+  risk_rating: number | null
   confidence_score: number | null
   status: string
   is_demo: boolean
