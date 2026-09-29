@@ -1,14 +1,13 @@
 ﻿"""
-ESG scoring configuration and pure functions.
-Versioned via SCORING_VERSION. All weights live here.
+ESG scoring configuration and pure functions. Versioned. No I/O.
 """
-
 from __future__ import annotations
 
 import statistics
 from typing import Any
 
 SCORING_VERSION = "baseline-v0"
+GREENWASHING_VERSION = "greenwashing-v1"
 
 ESG_WEIGHTS: dict[str, float] = {
     "environmental": 0.40,
@@ -19,6 +18,13 @@ ESG_WEIGHTS: dict[str, float] = {
 TRUST_WEIGHTS: dict[str, float] = {
     "performance": 0.70,
     "credibility": 0.30,
+}
+
+# Greenwashing composite weights (v1)
+GREENWASHING_WEIGHTS: dict[str, float] = {
+    "claim_vagueness": 0.40,          # from RF: mean P(unsubstantiated)
+    "claim_indicator_divergence": 0.40,  # from divergence engine
+    "indicator_strength": 0.20,        # weak ESG numbers = higher risk
 }
 
 RISK_HIGH_THRESHOLD = 0.50
@@ -99,6 +105,7 @@ def classify_greenwashing_risk(
     claims: list[dict[str, Any]],
     indicators: dict[str, Any] | None,
 ) -> dict[str, Any]:
+    """Rule-based fallback when the trained model isn't available."""
     if not claims:
         return {"risk": None, "score": None, "reason": "no_claims"}
 
@@ -131,10 +138,62 @@ def classify_greenwashing_risk(
     return {
         "risk": risk,
         "score": round(risk_score, 4),
+        "version": SCORING_VERSION,
         "components": {
             "avg_claim_strength": round(avg_strength, 3),
             "evidence_ratio": round(evidence_ratio, 3),
             "greenwash_signal": round(greenwash_signal, 3),
             "category_imbalance": round(category_imbalance, 3),
         },
+    }
+
+
+def compute_greenwashing_v1(
+    *,
+    claim_vagueness: float | None,          # 0-1, from trained model
+    divergence_score: float | None,         # 0-1, from divergence engine
+    indicator_strength: float | None,       # 0-1, weak indicators = 1
+    components_detail: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Composite greenwashing score v1.
+
+    score = 0.4·vagueness + 0.4·divergence + 0.2·indicator_strength
+
+    Components may be missing — we renormalise weights over available ones.
+    """
+    parts = {
+        "claim_vagueness": (claim_vagueness, GREENWASHING_WEIGHTS["claim_vagueness"]),
+        "claim_indicator_divergence": (divergence_score, GREENWASHING_WEIGHTS["claim_indicator_divergence"]),
+        "indicator_strength": (indicator_strength, GREENWASHING_WEIGHTS["indicator_strength"]),
+    }
+
+    available = {k: v for k, (v, _) in parts.items() if v is not None}
+    if not available:
+        return {
+            "risk": None,
+            "score": None,
+            "version": GREENWASHING_VERSION,
+            "reason": "no_components_available",
+        }
+
+    weight_sum = sum(w for v, w in parts.values() if v is not None)
+    score = sum(v * w for v, w in parts.values() if v is not None) / weight_sum
+
+    if score >= RISK_HIGH_THRESHOLD:
+        risk = "HIGH"
+    elif score >= RISK_MEDIUM_THRESHOLD:
+        risk = "MEDIUM"
+    else:
+        risk = "LOW"
+
+    return {
+        "risk": risk,
+        "score": round(score, 4),
+        "version": GREENWASHING_VERSION,
+        "components": {
+            k: (round(v, 4) if v is not None else None)
+            for k, (v, _) in parts.items()
+        },
+        "detail": components_detail or {},
     }
