@@ -35,10 +35,12 @@ export function ExplanationPanel({ analysisId }: Props) {
       ),
   })
 
-  const rows = (data?.items ?? []).filter((r) => r.explanation_type === tab)
+  const allRows = (data?.items ?? []).filter((r) => r.explanation_type === tab)
 
+  // Keep only non-zero contributions from the highest-magnitude per feature
   const byFeature = new Map<string, ExplanationRow>()
-  for (const r of rows) {
+  for (const r of allRows) {
+    if (Math.abs(r.contribution) < 1e-6) continue
     const prev = byFeature.get(r.feature_name)
     if (!prev || Math.abs(r.contribution) > Math.abs(prev.contribution)) {
       byFeature.set(r.feature_name, r)
@@ -54,21 +56,26 @@ export function ExplanationPanel({ analysisId }: Props) {
       positive: r.contribution > 0,
     }))
 
-  // Compute a sensible symmetric domain centered on 0
+  // Compute a symmetric domain [−D, +D] where D is a "nice" number
+  // slightly larger than the max absolute value.
   const maxAbs = chartRows.length
     ? Math.max(...chartRows.map((r) => Math.abs(r.value)), 0)
     : 1
-  // Round up to a "nice" number
-  const niceMax = maxAbs <= 0.001 ? 0.001
-    : maxAbs <= 0.01 ? 0.01
-    : maxAbs <= 0.05 ? 0.05
-    : maxAbs <= 0.1 ? 0.1
-    : maxAbs <= 0.25 ? 0.25
-    : maxAbs <= 0.5 ? 0.5
-    : Math.ceil(maxAbs * 10) / 10
+
+  const niceMax =
+    maxAbs <= 0.02 ? 0.02 :
+    maxAbs <= 0.05 ? 0.05 :
+    maxAbs <= 0.10 ? 0.10 :
+    maxAbs <= 0.20 ? 0.20 :
+    maxAbs <= 0.50 ? 0.50 :
+    maxAbs <= 1.00 ? 1.00 :
+    Math.ceil(maxAbs * 10) / 10
 
   const domain: [number, number] = [-niceMax, niceMax]
   const ticks = [-niceMax, -niceMax / 2, 0, niceMax / 2, niceMax]
+  const tickDecimals = niceMax < 0.05 ? 3 : 2
+
+  const nonZeroCount = chartRows.length
 
   return (
     <Card>
@@ -84,9 +91,7 @@ export function ExplanationPanel({ analysisId }: Props) {
                 onClick={() => setTab(k)}
                 className={cn(
                   'rounded-md px-3 py-1 text-xs font-medium transition-colors',
-                  tab === k
-                    ? 'bg-brand-600 text-white'
-                    : 'text-slate-600 hover:bg-slate-100',
+                  tab === k ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100',
                 )}
               >
                 {k}
@@ -106,34 +111,34 @@ export function ExplanationPanel({ analysisId }: Props) {
           </p>
         )}
 
-        {!isLoading && !error && chartRows.length === 0 && (
+        {!isLoading && !error && nonZeroCount === 0 && (
           <div className="flex flex-col items-center gap-2 py-8 text-center">
             <Brain className="h-5 w-5 text-slate-400" />
             <p className="text-sm text-slate-500">
-              No {tab} explanations persisted for this analysis.
+              No non-zero {tab} contributions persisted for this analysis.
             </p>
             <p className="text-xs text-slate-400">
-              Re-run the analysis to generate them.
+              Re-run the analysis with the updated backend to generate them.
             </p>
           </div>
         )}
 
-        {chartRows.length > 0 && (
+        {nonZeroCount > 0 && (
           <>
             <p className="mb-4 text-xs text-slate-500">
               Top feature contributions from the trained classifier ({tab}).{' '}
               <span className="font-medium text-eco-700">Green (negative)</span> pushes
               toward <em>substantiated</em>;{' '}
               <span className="font-medium text-red-700">red (positive)</span> pushes
-              toward <em>unsubstantiated</em>. X-axis range: [{niceMax.toFixed(3)},{' '}
-              {niceMax.toFixed(3)}].
+              toward <em>unsubstantiated</em>.
+              X-axis: {domain[0].toFixed(tickDecimals)} to {domain[1].toFixed(tickDecimals)}.
             </p>
             <div className="h-96">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={chartRows}
                   layout="vertical"
-                  margin={{ left: 140, right: 30, top: 10, bottom: 10 }}
+                  margin={{ left: 150, right: 40, top: 10, bottom: 10 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                   <XAxis
@@ -142,7 +147,7 @@ export function ExplanationPanel({ analysisId }: Props) {
                     ticks={ticks}
                     stroke="#64748b"
                     fontSize={11}
-                    tickFormatter={(v: number) => v.toFixed(niceMax < 0.05 ? 3 : 2)}
+                    tickFormatter={(v: number) => v.toFixed(tickDecimals)}
                   />
                   <YAxis
                     type="category"
@@ -157,17 +162,14 @@ export function ExplanationPanel({ analysisId }: Props) {
                   <ReferenceLine x={0} stroke="#94a3b8" />
                   <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                     {chartRows.map((r) => (
-                      <Cell
-                        key={r.name}
-                        fill={r.value < 0 ? '#1f9765' : '#c0392b'}
-                      />
+                      <Cell key={r.name} fill={r.value < 0 ? '#1f9765' : '#c0392b'} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <p className="mt-4 text-xs text-slate-400">
-              {rows.length} explanation rows &middot; method: {tab}
+              {nonZeroCount} non-zero contributions &middot; method: {tab}
             </p>
           </>
         )}

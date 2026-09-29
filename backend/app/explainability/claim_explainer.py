@@ -1,7 +1,7 @@
-﻿"""
+"""
 SHAP + LIME explanations.
 
-Real SHAP via shap.Explainer's PermutationExplainer — verified working with
+Real SHAP via shap.Explainer's PermutationExplainer â€” verified working with
 sklearn 1.5.2 and numpy 2.x. TreeExplainer is not used because it still
 crashes on sklearn 1.5.2 pickles.
 """
@@ -97,7 +97,7 @@ def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
 
     # Fallback: permutation attribution
     if sv_matrix is None:
-        logger.warning("All real SHAP approaches failed — using permutation fallback")
+        logger.warning("All real SHAP approaches failed â€” using permutation fallback")
         return _permutation_attribution(
             pipeline, tfidf, clf, sentence, feature_names, X, top_k
         )
@@ -130,12 +130,26 @@ def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
     contribs = sv[nonzero]
     names = feature_names[nonzero]
 
-    order = np.argsort(-np.abs(contribs))[:top_k]
+    # Drop features the model never used (SHAP = 0). Keep the top_k by
+    # absolute value from the remaining non-zero ones.
+    nonzero_mask = np.abs(contribs) > 1e-7
+    if nonzero_mask.sum() == 0:
+        return {
+            "features": [],
+            "note": "Model did not use any tokens from this sentence for prediction.",
+            "model": metadata.get("model"),
+            "explainer": kind,
+        }
+
+    names_nz = names[nonzero_mask]
+    contribs_nz = contribs[nonzero_mask]
+
+    order = np.argsort(-np.abs(contribs_nz))[:top_k]
     features = []
     for i in order:
-        c = float(contribs[i])
+        c = float(contribs_nz[i])
         features.append({
-            "feature": str(names[i]),
+            "feature": str(names_nz[i]),
             "contribution": round(c, 5),
             "direction": "unsubstantiated" if c > 0 else "substantiated",
         })
