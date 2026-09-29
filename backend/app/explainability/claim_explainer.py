@@ -1,6 +1,14 @@
-﻿"""SHAP + LIME explanations. Tries multiple SHAP modes, falls back to permutation."""
+﻿"""
+SHAP + LIME explanations.
+
+Real SHAP via shap.Explainer's PermutationExplainer — verified working with
+sklearn 1.5.2 and numpy 2.x. TreeExplainer is not used because it still
+crashes on sklearn 1.5.2 pickles.
+"""
 from __future__ import annotations
 
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -9,6 +17,9 @@ from app.ml.claim_classifier import load_active_model
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_LABELLED_CSV = _REPO_ROOT / "ml" / "datasets" / "processed" / "claims_to_label.csv"
 
 
 def _require_model():
@@ -20,59 +31,28 @@ def _require_model():
     return pipeline, metadata
 
 
-def _extract_slice(shap_values, clf, classes):
-    """Normalise SHAP output shape; return (n_features,) for the positive class."""
-    try:
-        target_idx = classes.index("unsubstantiated")
-    except ValueError:
-        target_idx = 1
-
-    sv = shap_values
-    if isinstance(sv, list):
-        sv = sv[target_idx]
-    sv = np.asarray(sv)
-
-    if sv.ndim == 3:
-        sv = sv[:, :, target_idx]
-    if sv.ndim == 2:
-        sv = sv[0]
-    return sv
-
-
-def _try_shap_approaches(clf, X):
-    """Try SHAP approaches in order of preference. Returns (values, kind) or (None, None)."""
-    import shap
-
-    classes = list(getattr(clf, "classes_", []))
-
-    attempts = [
-        ("TreeExplainer(tree_path_dependent)",
-            lambda: shap.TreeExplainer(clf, feature_perturbation="tree_path_dependent").shap_values(X)),
-        ("TreeExplainer(default)",
-            lambda: shap.TreeExplainer(clf).shap_values(X)),
-        ("TreeExplainer(model_output=probability)",
-            lambda: shap.TreeExplainer(clf, model_output="probability").shap_values(X)),
-        ("Explainer(auto)",
-            lambda: shap.Explainer(clf).shap_values(X)),
-    ]
-
-    for name, fn in attempts:
-        try:
-            sv = fn()
-            logger.info("SHAP %s succeeded", name)
-            return sv, name
-        except Exception as exc:
-            logger.info("SHAP %s failed: %s", name, str(exc)[:100])
-
-    # Last resort: KernelExplainer (slow but universal)
-    try:
-        e = shap.KernelExplainer(clf.predict_proba, X.toarray())
-        sv = e.shap_values(X.toarray(), nsamples=100)
-        logger.info("SHAP KernelExplainer succeeded")
-        return sv, "KernelExplainer"
-    except Exception as exc:
-        logger.warning("SHAP KernelExplainer failed: %s", exc)
-        return None, None
+@lru_cache(maxsize=1)
+def _background_sentences() -> list[str]:
+    """Load up to 100 sentences from the labelled CSV as background for SHAP."""
+    import csv
+    sents: list[str] = []
+    if _LABELLED_CSV.exists():
+        with _LABELLED_CSV.open("r", encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f):
+                s = (row.get("sentence") or "").strip()
+                if s:
+                    sents.append(s)
+                if len(sents) >= 100:
+                    break
+    if not sents:
+        sents = [
+            "we reduced our carbon emissions",
+            "renewable energy commitment",
+            "committed to sustainability goals",
+            "employee diversity program",
+            "board governance policy disclosure",
+        ]
+    return sents
 
 
 def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
@@ -85,28 +65,69 @@ def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
     feature_names = np.array(tfidf.get_feature_names_out())
     classes = list(getattr(clf, "classes_", []))
 
-    shap_values, kind = _try_shap_approaches(clf, X)
+    import shap
 
-    if shap_values is None:
+    # Build background in dense form
+    background_sentences = _background_sentences()
+    X_bg = tfidf.transform(background_sentences).toarray()
+
+    explainer_kind = "unknown"
+    sv_matrix: np.ndarray | None = None
+
+    # Approach 1: shap.Explainer with permutation (verified working)
+    try:
+        explainer = shap.Explainer(clf.predict_proba, X_bg, algorithm="permutation")
+        exp = explainer(X.toarray())
+        sv_matrix = np.asarray(exp.values)  # shape (1, n_features, n_classes)
+        explainer_kind = "PermutationExplainer"
+        logger.info("SHAP PermutationExplainer succeeded: shape=%s", sv_matrix.shape)
+    except Exception as exc:
+        logger.info("PermutationExplainer failed: %s", str(exc)[:120])
+
+    # Approach 2: KernelExplainer
+    if sv_matrix is None:
+        try:
+            explainer = shap.KernelExplainer(clf.predict_proba, X_bg)
+            sv = explainer.shap_values(X.toarray(), nsamples=200, silent=True)
+            sv_matrix = np.asarray(sv) if not isinstance(sv, list) else np.stack(sv, axis=-1)
+            explainer_kind = "KernelExplainer"
+            logger.info("SHAP KernelExplainer succeeded: shape=%s", sv_matrix.shape)
+        except Exception as exc:
+            logger.warning("KernelExplainer failed: %s", exc)
+
+    # Fallback: permutation attribution
+    if sv_matrix is None:
         logger.warning("All real SHAP approaches failed — using permutation fallback")
         return _permutation_attribution(
             pipeline, tfidf, clf, sentence, feature_names, X, top_k
         )
 
-    sv = _extract_slice(shap_values, clf, classes)
+    # Extract the unsubstantiated class slice, shape (n_features,)
+    try:
+        target_idx = classes.index("unsubstantiated")
+    except ValueError:
+        target_idx = sv_matrix.shape[-1] - 1 if sv_matrix.ndim == 3 else 0
+
+    sv = sv_matrix
+    if sv.ndim == 3:
+        # (n_samples, n_features, n_classes)
+        sv = sv[0, :, target_idx]
+    elif sv.ndim == 2:
+        # (n_samples, n_features)
+        sv = sv[0]
 
     x_dense = X.toarray()[0]
     nonzero = np.where(x_dense != 0)[0]
 
-    if len(nonzero) == 0:
+    if len(nonzero) == 0 or len(sv) != len(feature_names):
         return {
             "features": [],
-            "note": "No model features fired for this sentence.",
+            "note": "No meaningful features found.",
             "model": metadata.get("model"),
-            "explainer": kind,
+            "explainer": explainer_kind,
         }
 
-    contribs = sv[nonzero] if len(sv) > max(nonzero) else np.zeros(len(nonzero))
+    contribs = sv[nonzero]
     names = feature_names[nonzero]
 
     order = np.argsort(-np.abs(contribs))[:top_k]
@@ -121,7 +142,7 @@ def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
 
     return {
         "model": metadata.get("model"),
-        "explainer": kind,
+        "explainer": explainer_kind,
         "features": features,
         "note": (
             "SHAP values explain which tokens the trained model used. "

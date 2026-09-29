@@ -1,7 +1,7 @@
 ﻿import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
+  Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { Brain, Sparkles } from 'lucide-react'
 
@@ -37,7 +37,6 @@ export function ExplanationPanel({ analysisId }: Props) {
 
   const rows = (data?.items ?? []).filter((r) => r.explanation_type === tab)
 
-  // Aggregate by feature_name — pick largest absolute contribution
   const byFeature = new Map<string, ExplanationRow>()
   for (const r of rows) {
     const prev = byFeature.get(r.feature_name)
@@ -54,6 +53,22 @@ export function ExplanationPanel({ analysisId }: Props) {
       value: r.contribution,
       positive: r.contribution > 0,
     }))
+
+  // Compute a sensible symmetric domain centered on 0
+  const maxAbs = chartRows.length
+    ? Math.max(...chartRows.map((r) => Math.abs(r.value)), 0)
+    : 1
+  // Round up to a "nice" number
+  const niceMax = maxAbs <= 0.001 ? 0.001
+    : maxAbs <= 0.01 ? 0.01
+    : maxAbs <= 0.05 ? 0.05
+    : maxAbs <= 0.1 ? 0.1
+    : maxAbs <= 0.25 ? 0.25
+    : maxAbs <= 0.5 ? 0.5
+    : Math.ceil(maxAbs * 10) / 10
+
+  const domain: [number, number] = [-niceMax, niceMax]
+  const ticks = [-niceMax, -niceMax / 2, 0, niceMax / 2, niceMax]
 
   return (
     <Card>
@@ -87,8 +102,7 @@ export function ExplanationPanel({ analysisId }: Props) {
 
         {error && (
           <p className="text-sm text-red-700">
-            Failed to load explanations.{' '}
-            {error instanceof Error ? error.message : ''}
+            Failed to load explanations. {error instanceof Error ? error.message : ''}
           </p>
         )}
 
@@ -99,7 +113,6 @@ export function ExplanationPanel({ analysisId }: Props) {
               No {tab} explanations persisted for this analysis.
             </p>
             <p className="text-xs text-slate-400">
-              Explanations are generated on the top-strength claims at analysis time.
               Re-run the analysis to generate them.
             </p>
           </div>
@@ -112,36 +125,49 @@ export function ExplanationPanel({ analysisId }: Props) {
               <span className="font-medium text-eco-700">Green (negative)</span> pushes
               toward <em>substantiated</em>;{' '}
               <span className="font-medium text-red-700">red (positive)</span> pushes
-              toward <em>unsubstantiated</em>. These explain the model, not the
-              company&apos;s intent.
+              toward <em>unsubstantiated</em>. X-axis range: [{niceMax.toFixed(3)},{' '}
+              {niceMax.toFixed(3)}].
             </p>
-            <div className="h-80">
+            <div className="h-96">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={chartRows}
                   layout="vertical"
-                  margin={{ left: 100, right: 20, top: 10, bottom: 10 }}
+                  margin={{ left: 140, right: 30, top: 10, bottom: 10 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis type="number" stroke="#64748b" fontSize={11} />
+                  <XAxis
+                    type="number"
+                    domain={domain}
+                    ticks={ticks}
+                    stroke="#64748b"
+                    fontSize={11}
+                    tickFormatter={(v: number) => v.toFixed(niceMax < 0.05 ? 3 : 2)}
+                  />
                   <YAxis
                     type="category"
                     dataKey="name"
                     stroke="#64748b"
                     fontSize={11}
-                    width={120}
+                    width={150}
                   />
-                  <Tooltip formatter={(v: number) => v.toFixed(4)} />
-                  <Bar dataKey="value">
+                  <Tooltip
+                    formatter={(v: number) => [v.toFixed(5), 'contribution']}
+                  />
+                  <ReferenceLine x={0} stroke="#94a3b8" />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                     {chartRows.map((r) => (
-                      <Cell key={r.name} fill={r.value < 0 ? '#1f9765' : '#c0392b'} />
+                      <Cell
+                        key={r.name}
+                        fill={r.value < 0 ? '#1f9765' : '#c0392b'}
+                      />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
             <p className="mt-4 text-xs text-slate-400">
-              {rows.length} explanation rows · method: {tab}
+              {rows.length} explanation rows &middot; method: {tab}
             </p>
           </>
         )}
