@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, AlertCircle, Gauge, CheckCircle2 } from 'lucide-react'
+import { AlertCircle, ArrowLeft, CheckCircle2, Gauge } from 'lucide-react'
 
 import { api } from '@/lib/api'
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card'
@@ -9,6 +9,9 @@ import { Spinner } from '@/components/ui/Spinner'
 import { cn, formatDate, formatScore, riskTone } from '@/lib/utils'
 import type { Analysis } from '@/types'
 import { ExplanationPanel } from '@/components/ExplanationPanel'
+import { AttributionPanel } from '@/components/AttributionPanel'
+import { NarrativeCard } from '@/components/NarrativeCard'
+import { FactorChart } from '@/components/FactorChart'
 
 interface EvidenceRow {
   claim_id: string | null
@@ -44,7 +47,7 @@ function ratingBoxClass(r: number | null | undefined): string {
 }
 
 function ratingBand(r: number | null | undefined): string {
-  if (r === null || r === undefined) return '—'
+  if (r === null || r === undefined) return '-'
   if (r < 3) return 'LOW'
   if (r < 6) return 'MEDIUM'
   return 'HIGH'
@@ -67,7 +70,7 @@ export function AnalysisDetail() {
       <Card className="p-6">
         <p className="text-sm text-red-700">Analysis not found.</p>
         <Link to="/dashboard" className="mt-2 inline-block text-sm text-brand-700 hover:underline">
-          ← Back to dashboard
+          Back to dashboard
         </Link>
       </Card>
     )
@@ -91,8 +94,7 @@ export function AnalysisDetail() {
               Analysis result
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Model <span className="font-mono">{a.model_version}</span> ·
-              created {formatDate(a.created_at)} · status {a.status}
+              Model <span className="font-mono">{a.model_version}</span> &middot; created {formatDate(a.created_at)} &middot; status {a.status}
             </p>
           </div>
           {a.greenwashing_risk && (
@@ -103,14 +105,13 @@ export function AnalysisDetail() {
         </div>
       </div>
 
-      {/* Hero: 0-10 rating */}
       <Card className={cn('border-2', ratingBoxClass(rating))}>
         <CardBody className="flex flex-wrap items-center justify-between gap-6 py-6">
           <div>
             <p className="label">Greenwashing Risk Rating</p>
             <div className="mt-2 flex items-baseline gap-2">
               <span className={cn('text-6xl font-semibold tabular-nums', ratingToneClass(rating))}>
-                {rating !== null ? rating.toFixed(2) : '—'}
+                {rating !== null ? rating.toFixed(2) : '-'}
               </span>
               <span className="text-3xl text-slate-400">/10</span>
               <span className={cn('ml-2 text-sm font-medium uppercase tracking-wide', ratingToneClass(rating))}>
@@ -118,12 +119,11 @@ export function AnalysisDetail() {
               </span>
             </div>
             <p className="mt-3 max-w-lg text-xs text-slate-500">
-              Rating = 10 × greenwashing probability. Combines claim vagueness, claim-vs-indicator
-              divergence, and indicator weakness. <strong>Potential risk indicator</strong> — not
-              a determination of intent.
+              Rating = 10 x greenwashing probability. Combines claim vagueness,
+              claim-vs-indicator divergence, and indicator weakness.
+              <strong> Potential risk indicator</strong> - not a determination of intent.
             </p>
           </div>
-
           {rating !== null && (
             <div className="text-right">
               <Gauge className={cn('ml-auto h-10 w-10', ratingToneClass(rating))} />
@@ -135,7 +135,6 @@ export function AnalysisDetail() {
         </CardBody>
       </Card>
 
-      {/* Secondary metrics */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card className="p-5">
           <p className="label">Claim credibility</p>
@@ -149,10 +148,10 @@ export function AnalysisDetail() {
         <Card className="p-5">
           <p className="label">Greenwashing probability</p>
           <p className="mt-2 text-3xl font-semibold tabular-nums text-slate-900">
-            {a.greenwashing_probability?.toFixed(4) ?? '—'}
+            {a.greenwashing_probability?.toFixed(4) ?? '-'}
           </p>
           <p className="mt-2 text-xs text-slate-500">
-            0–1 raw model output (rating = ×10)
+            0-1 raw model output (rating = x10)
           </p>
         </Card>
         <Card className="p-5">
@@ -166,7 +165,6 @@ export function AnalysisDetail() {
         </Card>
       </div>
 
-      {/* Evidence table — claim vs indicator */}
       {a.evidence_table && a.evidence_table.length > 0 && (
         <Card>
           <CardHeader>
@@ -198,10 +196,10 @@ export function AnalysisDetail() {
                       </td>
                       <td className="px-5 py-3 font-mono text-xs text-slate-600">{row.metric}</td>
                       <td className="px-5 py-3 text-right tabular-nums text-slate-700">
-                        {row.claimed_pct != null ? row.claimed_pct.toFixed(3) : '—'}
+                        {row.claimed_pct != null ? row.claimed_pct.toFixed(3) : '-'}
                       </td>
                       <td className="px-5 py-3 text-right tabular-nums text-slate-700">
-                        {row.actual_pct != null ? row.actual_pct.toFixed(3) : '—'}
+                        {row.actual_pct != null ? row.actual_pct.toFixed(3) : '-'}
                       </td>
                       <td className="px-5 py-3 text-right">
                         <span
@@ -227,7 +225,12 @@ export function AnalysisDetail() {
         </Card>
       )}
 
-      {/* Explanation panel */}
+      <AttributionPanel analysisId={a.id} />
+
+      <NarrativeCard analysisId={a.id} />
+
+      <FactorChart analysisId={a.id} />
+
       <ExplanationPanel analysisId={a.id} />
 
       {a.missing_data && Object.keys(a.missing_data).length > 0 && (
@@ -240,17 +243,6 @@ export function AnalysisDetail() {
           <CardBody>
             <pre className="overflow-x-auto rounded-lg bg-amber-50 p-4 text-xs text-amber-900">
               {JSON.stringify(a.missing_data, null, 2)}
-            </pre>
-          </CardBody>
-        </Card>
-      )}
-
-      {a.feature_vector && (
-        <Card>
-          <CardHeader><CardTitle>Feature vector (model input)</CardTitle></CardHeader>
-          <CardBody>
-            <pre className="overflow-x-auto rounded-lg bg-slate-50 p-4 text-xs text-slate-800">
-              {JSON.stringify(a.feature_vector, null, 2)}
             </pre>
           </CardBody>
         </Card>

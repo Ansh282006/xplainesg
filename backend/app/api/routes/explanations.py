@@ -1,4 +1,4 @@
-﻿"""Explanation endpoints — SHAP, LIME, factor aggregation, and narrative."""
+﻿"""Explanation endpoints — SHAP, LIME, factors, narrative, rating attribution."""
 from __future__ import annotations
 
 from uuid import UUID
@@ -51,10 +51,6 @@ async def list_explanations(analysis_id: UUID) -> dict:
 
 @router.get("/{analysis_id}/factors")
 async def factor_contributions(analysis_id: UUID) -> dict:
-    """
-    Reads persisted SHAP + LIME rows for the analysis, groups them by
-    one of the 10 real ESG factors, returns aggregated contributions.
-    """
     sb = get_supabase_admin()
     res = (
         sb.table("explanations")
@@ -91,10 +87,6 @@ async def factor_contributions(analysis_id: UUID) -> dict:
 
 @router.get("/{analysis_id}/narrative")
 async def research_narrative(analysis_id: UUID) -> dict:
-    """
-    Auto-generates a research-style narrative from real analysis data:
-    scores, top divergences, and factor contributions.
-    """
     sb = get_supabase_admin()
 
     a_res = (
@@ -104,7 +96,6 @@ async def research_narrative(analysis_id: UUID) -> dict:
         raise HTTPException(status_code=404, detail="Analysis not found")
     a = a_res.data[0]
 
-    # Factor contributions
     f_res = (
         sb.table("explanations")
         .select("*")
@@ -122,7 +113,6 @@ async def research_narrative(analysis_id: UUID) -> dict:
     factors = aggregate_features_to_factors(feats)
     top_factors = factors[:3]
 
-    # Greenwashing components (if stored in feature_vector)
     fv = a.get("feature_vector") or {}
     gw = (fv.get("greenwashing_components") or {}) if isinstance(fv, dict) else {}
     vagueness = gw.get("claim_vagueness")
@@ -136,7 +126,6 @@ async def research_narrative(analysis_id: UUID) -> dict:
     claim_count = fv.get("claim_count") if isinstance(fv, dict) else None
     credibility = a.get("claim_credibility_score")
 
-    # --- Build narrative -------------------------------------------------
     parts: list[str] = []
 
     if rating is not None:
@@ -170,32 +159,26 @@ async def research_narrative(analysis_id: UUID) -> dict:
             + "."
         )
 
-    # Divergence-based finding
     if divergence is not None and divergence < 0.15:
         parts.append(
-            "The textual claims are largely consistent with disclosed indicators — "
-            "numeric values in the report match the structured ESG data for the "
-            "metrics we could compare."
+            "The textual claims are largely consistent with disclosed indicators."
         )
     elif divergence is not None and divergence < 0.35:
         parts.append(
-            "Some claims show minor divergence from disclosed indicators — these "
-            "typically occur where forward-looking targets (e.g. 2030 commitments) "
-            "are compared against current-year baselines."
+            "Some claims show minor divergence from disclosed indicators — typically "
+            "where forward-looking targets are compared against current-year baselines."
         )
     elif divergence is not None:
         parts.append(
-            "Claims and indicators diverge meaningfully. Several numeric claims in "
-            "the report do not align with the company's own disclosed ESG values, "
-            "which is the primary signal we treat as potential greenwashing risk."
+            "Claims and indicators diverge meaningfully. Several numeric claims do not "
+            "align with the company's own disclosed ESG values — the primary signal we "
+            "treat as potential greenwashing risk."
         )
 
     parts.append(
-        "For ESG practitioners, this suggests prioritising verification of the "
-        "highest-contributing factors above when reviewing the report: cross-check "
-        "the claim text against the corresponding BRSR / GRI table before drawing "
-        "any conclusions. This is an AI-generated research assessment, not a "
-        "certified ESG audit or a legal determination."
+        "For ESG practitioners, this suggests prioritising verification of the highest-"
+        "contributing factors above. This is an AI-generated research assessment, not "
+        "a certified ESG audit or legal determination."
     )
 
     return {
@@ -207,6 +190,146 @@ async def research_narrative(analysis_id: UUID) -> dict:
             "claim_indicator_divergence": divergence,
             "indicator_weakness": weakness,
         },
+    }
+
+
+# ---------------------------------------------------------------------------
+# NEW: Rating attribution — "Why this rating?"
+# ---------------------------------------------------------------------------
+@router.get("/{analysis_id}/rating-attribution")
+async def rating_attribution(analysis_id: UUID) -> dict:
+    """
+    Decomposes the final 0-10 rating into its weighted components, with a
+    waterfall of contributions and a sensitivity analysis.
+
+    This is the primary view a reviewer / regulator uses to answer:
+      "Why is the rating what it is, and what would change it?"
+    """
+    sb = get_supabase_admin()
+    a_res = (
+        sb.table("analyses").select("*").eq("id", str(analysis_id)).limit(1).execute()
+    )
+    if not a_res.data:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    a = a_res.data[0]
+
+    fv = a.get("feature_vector") or {}
+    gw = (fv.get("greenwashing_components") or {}) if isinstance(fv, dict) else {}
+
+    rating = a.get("risk_rating")
+    if rating is None and a.get("greenwashing_probability") is not None:
+        rating = round(a["greenwashing_probability"] * 10, 2)
+
+    # Weighted components — these match GREENWASHING_WEIGHTS in scoring.py
+    WEIGHTS = {
+        "claim_vagueness": 0.4,
+        "claim_indicator_divergence": 0.4,
+        "indicator_strength": 0.2,
+    }
+
+    LABELS = {
+        "claim_vagueness": "Claim vagueness",
+        "claim_indicator_divergence": "Claim-indicator divergence",
+        "indicator_strength": "Indicator weakness",
+    }
+
+    DESCRIPTIONS = {
+        "claim_vagueness":
+            "How vague or unsubstantiated the report's language is, per the ML classifier.",
+        "claim_indicator_divergence":
+            "How far the report's numeric claims diverge from its own disclosed indicators.",
+        "indicator_strength":
+            "How weak the company's disclosed ESG indicators are in absolute terms.",
+    }
+
+    values = {
+        "claim_vagueness": gw.get("claim_vagueness"),
+        "claim_indicator_divergence": gw.get("claim_indicator_divergence"),
+        "indicator_strength": gw.get("indicator_strength"),
+    }
+
+    available = {k: v for k, v in values.items() if v is not None}
+    weight_sum = sum(WEIGHTS[k] for k in available) if available else 0.0
+
+    contributions: list[dict] = []
+    for key in ["claim_vagueness", "claim_indicator_divergence", "indicator_strength"]:
+        v = values[key]
+        if v is None or weight_sum == 0:
+            contributions.append({
+                "component": key,
+                "label": LABELS[key],
+                "description": DESCRIPTIONS[key],
+                "value": None,
+                "weight": WEIGHTS[key],
+                "normalized_weight": None,
+                "contribution": None,
+                "available": False,
+            })
+            continue
+        norm_w = WEIGHTS[key] / weight_sum
+        contribution = v * norm_w * 10.0  # rescale to rating points
+        contributions.append({
+            "component": key,
+            "label": LABELS[key],
+            "description": DESCRIPTIONS[key],
+            "value": round(v, 4),
+            "weight": WEIGHTS[key],
+            "normalized_weight": round(norm_w, 4),
+            "contribution": round(contribution, 3),
+            "available": True,
+        })
+
+    # Sensitivity: if each component were 0, what would the rating be?
+    sensitivity: list[dict] = []
+    if weight_sum > 0 and rating is not None:
+        for key in ["claim_vagueness", "claim_indicator_divergence", "indicator_strength"]:
+            if values.get(key) is None:
+                continue
+            other_sum = sum(
+                values[k] * (WEIGHTS[k] / weight_sum)
+                for k in values
+                if k != key and values[k] is not None
+            )
+            new_rating = round(other_sum * 10, 3)
+            sensitivity.append({
+                "if_zero": LABELS[key],
+                "new_rating": new_rating,
+                "delta": round(new_rating - rating, 3),
+            })
+
+    # What if vagueness dropped to 0.30 (a common improvement scenario)?
+    hypothetical = None
+    if values.get("claim_vagueness") is not None and weight_sum > 0:
+        improved_vagueness = 0.30
+        other_contrib = sum(
+            values[k] * (WEIGHTS[k] / weight_sum) * 10
+            for k in values
+            if k != "claim_vagueness" and values[k] is not None
+        )
+        improved = improved_vagueness * (WEIGHTS["claim_vagueness"] / weight_sum) * 10 + other_contrib
+        hypothetical = {
+            "scenario": "If claim vagueness dropped to 0.30 (industry median)",
+            "new_rating": round(improved, 3),
+            "current_rating": rating,
+            "delta": round(improved - (rating or 0), 3),
+        }
+
+    return {
+        "rating": rating,
+        "formula": (
+            "rating = 10 × [ "
+            "0.4·vagueness + 0.4·divergence + 0.2·indicator_weakness "
+            "] / Σ(weights of available components)"
+        ),
+        "contributions": contributions,
+        "sensitivity": sensitivity,
+        "hypothetical": hypothetical,
+        "weights_config": WEIGHTS,
+        "note": (
+            "Contribution = component_value × normalized_weight × 10. "
+            "Sum of contributions equals the final rating. "
+            "Ratings reflect potential risk; they are not a determination of intent."
+        ),
     }
 
 
