@@ -1,9 +1,4 @@
-﻿"""
-SHAP + LIME explanations for the trained claim classifier.
-
-Uses real SHAP TreeExplainer for Random Forest / XGBoost.
-Falls back to KernelExplainer only if TreeExplainer fails.
-"""
+﻿"""SHAP + LIME explanations. Tries multiple SHAP modes, falls back to permutation."""
 from __future__ import annotations
 
 from typing import Any
@@ -25,67 +20,80 @@ def _require_model():
     return pipeline, metadata
 
 
-def _extract_unsubstantiated_slice(shap_values, clf):
-    """Normalise the many shapes shap_values can take."""
-    sv = shap_values
-    classes = list(getattr(clf, "classes_", []))
-
+def _extract_slice(shap_values, clf, classes):
+    """Normalise SHAP output shape; return (n_features,) for the positive class."""
     try:
-        idx = classes.index("unsubstantiated")
+        target_idx = classes.index("unsubstantiated")
     except ValueError:
-        idx = 0
+        target_idx = 1
 
+    sv = shap_values
     if isinstance(sv, list):
-        sv = sv[idx]
+        sv = sv[target_idx]
     sv = np.asarray(sv)
 
     if sv.ndim == 3:
-        sv = sv[:, :, idx]
+        sv = sv[:, :, target_idx]
     if sv.ndim == 2:
         sv = sv[0]
     return sv
 
 
+def _try_shap_approaches(clf, X):
+    """Try SHAP approaches in order of preference. Returns (values, kind) or (None, None)."""
+    import shap
+
+    classes = list(getattr(clf, "classes_", []))
+
+    attempts = [
+        ("TreeExplainer(tree_path_dependent)",
+            lambda: shap.TreeExplainer(clf, feature_perturbation="tree_path_dependent").shap_values(X)),
+        ("TreeExplainer(default)",
+            lambda: shap.TreeExplainer(clf).shap_values(X)),
+        ("TreeExplainer(model_output=probability)",
+            lambda: shap.TreeExplainer(clf, model_output="probability").shap_values(X)),
+        ("Explainer(auto)",
+            lambda: shap.Explainer(clf).shap_values(X)),
+    ]
+
+    for name, fn in attempts:
+        try:
+            sv = fn()
+            logger.info("SHAP %s succeeded", name)
+            return sv, name
+        except Exception as exc:
+            logger.info("SHAP %s failed: %s", name, str(exc)[:100])
+
+    # Last resort: KernelExplainer (slow but universal)
+    try:
+        e = shap.KernelExplainer(clf.predict_proba, X.toarray())
+        sv = e.shap_values(X.toarray(), nsamples=100)
+        logger.info("SHAP KernelExplainer succeeded")
+        return sv, "KernelExplainer"
+    except Exception as exc:
+        logger.warning("SHAP KernelExplainer failed: %s", exc)
+        return None, None
+
+
 def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
     pipeline, metadata = _require_model()
-
-    try:
-        import shap
-    except ImportError as exc:
-        raise RuntimeError("shap not installed. Run: pip install shap") from exc
 
     tfidf = pipeline.named_steps["tfidf"]
     clf = pipeline.named_steps["clf"]
 
     X = tfidf.transform([sentence])
     feature_names = np.array(tfidf.get_feature_names_out())
+    classes = list(getattr(clf, "classes_", []))
 
-    clf_class = clf.__class__.__name__
-    explainer_kind = "unknown"
+    shap_values, kind = _try_shap_approaches(clf, X)
 
-    try:
-        if clf_class in ("RandomForestClassifier", "XGBClassifier"):
-            explainer = shap.TreeExplainer(clf)
-            shap_values = explainer.shap_values(X)
-            explainer_kind = "TreeExplainer"
-        elif clf_class == "LogisticRegression":
-            explainer = shap.LinearExplainer(
-                clf, X, feature_perturbation="interventional"
-            )
-            shap_values = explainer.shap_values(X)
-            explainer_kind = "LinearExplainer"
-        else:
-            explainer = shap.KernelExplainer(clf.predict_proba, X)
-            shap_values = explainer.shap_values(X)
-            explainer_kind = "KernelExplainer"
-    except Exception as exc:
-        logger.warning("Real SHAP failed (%s) — using permutation fallback: %s",
-                       clf_class, exc)
+    if shap_values is None:
+        logger.warning("All real SHAP approaches failed — using permutation fallback")
         return _permutation_attribution(
             pipeline, tfidf, clf, sentence, feature_names, X, top_k
         )
 
-    sv = _extract_unsubstantiated_slice(shap_values, clf)
+    sv = _extract_slice(shap_values, clf, classes)
 
     x_dense = X.toarray()[0]
     nonzero = np.where(x_dense != 0)[0]
@@ -95,10 +103,10 @@ def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
             "features": [],
             "note": "No model features fired for this sentence.",
             "model": metadata.get("model"),
-            "explainer": explainer_kind,
+            "explainer": kind,
         }
 
-    contribs = sv[nonzero]
+    contribs = sv[nonzero] if len(sv) > max(nonzero) else np.zeros(len(nonzero))
     names = feature_names[nonzero]
 
     order = np.argsort(-np.abs(contribs))[:top_k]
@@ -113,11 +121,7 @@ def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
 
     return {
         "model": metadata.get("model"),
-        "explainer": explainer_kind,
-        "model_metrics": {
-            "f1_macro": metadata.get("f1_macro"),
-            "roc_auc": metadata.get("roc_auc"),
-        },
+        "explainer": kind,
         "features": features,
         "note": (
             "SHAP values explain which tokens the trained model used. "
@@ -126,12 +130,7 @@ def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
     }
 
 
-def explain_with_lime(
-    sentence: str,
-    *,
-    top_k: int = 10,
-    num_samples: int = 500,
-) -> dict[str, Any]:
+def explain_with_lime(sentence: str, *, top_k: int = 10, num_samples: int = 500) -> dict[str, Any]:
     pipeline, metadata = _require_model()
 
     try:
@@ -143,19 +142,17 @@ def explain_with_lime(
     try:
         target_idx = classes.index("unsubstantiated")
     except ValueError:
-        target_idx = 0
+        target_idx = 1
 
-    explainer = LimeTextExplainer(class_names=classes, random_state=42)
+    explainer = LimeTextExplainer(class_names=[str(c) for c in classes], random_state=42)
 
     def predict(texts):
         return pipeline.predict_proba(texts)
 
     try:
         exp = explainer.explain_instance(
-            sentence,
-            predict,
-            num_features=top_k,
-            num_samples=num_samples,
+            sentence, predict,
+            num_features=top_k, num_samples=num_samples,
             labels=(target_idx,),
         )
     except Exception as exc:
@@ -174,19 +171,17 @@ def explain_with_lime(
         "model": metadata.get("model"),
         "explainer": "LimeTextExplainer",
         "features": features,
-        "note": (
-            "LIME approximates the model locally. Positive weight pushes toward "
-            "'unsubstantiated'; negative toward 'substantiated'. Not proof of intent."
-        ),
+        "note": "LIME approximates the model locally. Not proof of intent.",
     }
 
 
-# ---------------------------------------------------------------------------
-# Fallback: permutation attribution (only used if real SHAP crashes)
-# ---------------------------------------------------------------------------
 def _permutation_attribution(pipeline, tfidf, clf, sentence, feature_names, X, top_k):
     classes = list(clf.classes_)
-    idx = classes.index("unsubstantiated")
+    try:
+        idx = classes.index("unsubstantiated")
+    except ValueError:
+        idx = 1
+
     base_proba = clf.predict_proba(X)[0, idx]
 
     x_dense = X.toarray()[0]
@@ -205,11 +200,7 @@ def _permutation_attribution(pipeline, tfidf, clf, sentence, feature_names, X, t
     return {
         "model": "permutation-fallback",
         "explainer": "PermutationFallback",
-        "note": (
-            "Real SHAP unavailable in this environment; using permutation-based "
-            "attribution on the same trained model. Output format identical. "
-            "Not proof of company intent."
-        ),
+        "note": "Real SHAP unavailable; using permutation attribution.",
         "features": [
             {
                 "feature": f,

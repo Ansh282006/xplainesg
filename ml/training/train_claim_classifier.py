@@ -89,16 +89,34 @@ def build_tfidf() -> TfidfVectorizer:
 def evaluate(name: str, model: Pipeline, X_test, y_test, cv_scores: np.ndarray) -> dict:
     y_pred = model.predict(X_test)
 
-    # ROC-AUC needs probability of the positive class ("substantiated").
-    # sklearn sorts classes alphabetically, so 'substantiated' is index 0,
-    # NOT index 1. Look up the actual position to avoid the classic bug.
     import numpy as _np
     classes = list(model.classes_)
-    pos_idx = classes.index("substantiated")
-    y_test_arr = _np.asarray(y_test, dtype=object)
+
+    # Detect numeric classes (XGBoost retrained with LabelEncoder)
+    # LabelEncoder sorted alphabetically: 'substantiated'->0, 'unsubstantiated'->1
+    numeric = all(isinstance(c, (int, _np.integer)) for c in classes)
+
+    if numeric:
+        # Decode both test labels and predictions back to strings
+        def _decode(v):
+            return "substantiated" if int(v) == 0 else "unsubstantiated"
+        y_test_dec = [_decode(v) for v in y_test]
+        y_pred_dec = [_decode(v) for v in y_pred]
+        pos_idx = 0  # 'substantiated' encoded as 0
+        y_test_arr = _np.asarray(y_test_dec, dtype=object)
+    else:
+        y_test_dec = list(y_test)
+        y_pred_dec = list(y_pred)
+        pos_idx = classes.index("substantiated")
+        y_test_arr = _np.asarray(y_test, dtype=object)
+
     y_test_bin = (y_test_arr == "substantiated").astype(int)
     y_proba = model.predict_proba(X_test)[:, pos_idx]
     roc_auc = float(roc_auc_score(y_test_bin, y_proba))
+
+    # Reassign for downstream use
+    y_test = y_test_dec
+    y_pred = y_pred_dec
 
     cm = confusion_matrix(y_test, y_pred, labels=["unsubstantiated", "substantiated"])
     report = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
@@ -161,7 +179,7 @@ def train_one(
     print(f"  F1 (macro):        {metrics['f1_macro']:.4f}")
     print(f"  F1 (weighted):     {metrics['f1_weighted']:.4f}")
     print(f"  ROC-AUC:           {metrics['roc_auc']:.4f}")
-    print(f"  CV F1 (5-fold):    {metrics['cv_f1_mean']:.4f} Ã‚Â± {metrics['cv_f1_std']:.4f}")
+    print(f"  CV F1 (5-fold):    {metrics['cv_f1_mean']:.4f} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â± {metrics['cv_f1_std']:.4f}")
     print(f"  Confusion matrix [[unsub],[sub]]:")
     for row in metrics["confusion_matrix"]:
         print(f"    {row}")
@@ -230,9 +248,17 @@ def main() -> None:
         ),
     ))
 
+    # XGBoost needs numeric labels. Encode y to {0,1}, train, then the
+    # pipeline's classes_ will be [0,1] which we remap on evaluation.
+    from sklearn.preprocessing import LabelEncoder
+
+    le = LabelEncoder()
+    y_train_num = le.fit_transform(y_train)   # substantiated->0, unsubstantiated->1
+    y_test_num = le.transform(y_test)
+
     results.append(train_one(
         "tfidf-xgb-v1",
-        X_train, y_train, X_test, y_test,
+        X_train, y_train_num, X_test, y_test_num,
         XGBClassifier(
             n_estimators=400,
             max_depth=6,
@@ -253,9 +279,9 @@ def main() -> None:
     print("=" * 60)
     print(f"{'Model':15s}  {'F1':>6s}  {'AUC':>6s}  {'CV F1':>12s}")
     for r in results:
-        print(f"{r['model']:15s}  {r['f1_macro']:.4f}  {r['roc_auc']:.4f}  {r['cv_f1_mean']:.4f}Ã‚Â±{r['cv_f1_std']:.4f}")
+        print(f"{r['model']:15s}  {r['f1_macro']:.4f}  {r['roc_auc']:.4f}  {r['cv_f1_mean']:.4f}ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±{r['cv_f1_std']:.4f}")
     print()
-    print("NOTE: baseline-v0 (rule-based) has no test metric Ã¢â‚¬â€ it is not a trainable model.")
+    print("NOTE: baseline-v0 (rule-based) has no test metric ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â it is not a trainable model.")
     print("      Compare only against each other on the same held-out 20%.")
 
 

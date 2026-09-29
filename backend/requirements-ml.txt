@@ -1,4 +1,4 @@
-﻿# XplainESG - ML/NLP runtime dependencies
+# XplainESG - ML/NLP runtime dependencies
 
 # --- Phase 3: PDF extraction ---
 pypdf==5.1.0
@@ -7,7 +7,7 @@ pypdf==5.1.0
 spacy==3.8.2
 
 # --- Phase 4: ML training ---
-scikit-learn==1.6.0
+scikit-learn==1.5.2
 pandas==2.2.3
 joblib==1.4.2
 
