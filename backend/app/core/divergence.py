@@ -1,4 +1,4 @@
-"""Divergence v2 — 3-case logic with reliable/gap distinction."""
+"""Divergence v3 — distinguishes level claims from change claims."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -28,10 +28,60 @@ def compute_divergence(
     curr = (current_indicator or {}).get(claim.metric)
     prev = (previous_indicator or {}).get(claim.metric)
 
-    # Case: no current value → gap
+    # --- LEVEL CLAIMS: compare claim value against indicator VALUE ---
+    if claim.claim_type == "level":
+        if curr is None:
+            if claim.value_pct is None:
+                return None
+            return DivergenceResult(
+                metric=claim.metric,
+                claimed_pct=claim.value_pct,
+                actual_pct=None,
+                divergence=0.4,
+                interpretation="metric_not_disclosed_by_company",
+                reliable=False,
+            )
+        if claim.value_pct is None:
+            return None
+
+        # Percentages: curr is typically a % (e.g. 39.44), claim is 0.39-0.45 range
+        try:
+            actual_level = float(curr) / 100.0  # normalize to 0-1 if stored as 0-100
+            # But our indicators may be stored as 39.44 (already %-formatted) or 0.3944
+            # Heuristic: if abs > 1.5, treat as percentage scale (0-100)
+            if abs(float(curr)) > 1.5:
+                actual_level = float(curr) / 100.0
+            else:
+                actual_level = float(curr)
+        except (TypeError, ValueError):
+            return None
+
+        # Divergence = absolute level difference, normalised.
+        # 0.1 difference (10 percentage points) = 0.5 divergence
+        diff = abs(claim.value_pct - actual_level)
+        divergence = min(diff / 0.2, 1.0)
+
+        if divergence < 0.15:
+            interp = "Claim level consistent with disclosed indicator"
+        elif divergence < 0.35:
+            interp = "Minor divergence — claim level slightly differs"
+        elif divergence < 0.65:
+            interp = "Moderate divergence — claim level overstates indicator"
+        else:
+            interp = "High divergence — claim level contradicted by indicator"
+
+        return DivergenceResult(
+            metric=claim.metric,
+            claimed_pct=round(claim.value_pct, 4),
+            actual_pct=round(actual_level, 4),
+            divergence=round(divergence, 3),
+            interpretation=interp,
+            reliable=True,
+        )
+
+    # --- CHANGE CLAIMS: original YoY logic ---
     if curr is None:
         if claim.value_pct is None:
-            # claim mentions metric without a number and no indicator → weak gap
             return None
         return DivergenceResult(
             metric=claim.metric,
@@ -42,7 +92,6 @@ def compute_divergence(
             reliable=False,
         )
 
-    # Case: current only, no previous → partial gap (needs prior year)
     if prev is None or prev == 0:
         if claim.value_pct is None:
             return None
@@ -55,15 +104,12 @@ def compute_divergence(
             reliable=False,
         )
 
-    # Case: full computation
     try:
         actual_pct = (float(curr) - float(prev)) / abs(float(prev))
     except (TypeError, ValueError, ZeroDivisionError):
         return None
 
     if claim.value_pct is None:
-        # Claim mentions the metric, has current+prior indicators, but the
-        # claim itself makes no numeric promise → not a divergence case
         return None
 
     diff = abs(claim.value_pct - actual_pct)
@@ -105,9 +151,6 @@ def aggregate_divergence(results: list[DivergenceResult]) -> dict[str, Any]:
         "metric_not_disclosed_by_company",
     )]
 
-    # If we have NO reliable divergences, we cannot compute a real score.
-    # Report the gap count but return score=None so the composite formula
-    # can renormalise its weights honestly.
     if not reliable:
         return {
             "score": None,
