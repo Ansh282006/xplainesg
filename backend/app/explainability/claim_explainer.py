@@ -1,5 +1,8 @@
-"""
+﻿"""
 SHAP + LIME explanations for the trained claim classifier.
+
+Uses real SHAP TreeExplainer for Random Forest / XGBoost.
+Falls back to KernelExplainer only if TreeExplainer fails.
 """
 from __future__ import annotations
 
@@ -37,7 +40,6 @@ def _extract_unsubstantiated_slice(shap_values, clf):
     sv = np.asarray(sv)
 
     if sv.ndim == 3:
-        # (n_samples, n_features, n_classes)
         sv = sv[:, :, idx]
     if sv.ndim == 2:
         sv = sv[0]
@@ -47,40 +49,41 @@ def _extract_unsubstantiated_slice(shap_values, clf):
 def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
     pipeline, metadata = _require_model()
 
+    try:
+        import shap
+    except ImportError as exc:
+        raise RuntimeError("shap not installed. Run: pip install shap") from exc
+
     tfidf = pipeline.named_steps["tfidf"]
     clf = pipeline.named_steps["clf"]
 
     X = tfidf.transform([sentence])
     feature_names = np.array(tfidf.get_feature_names_out())
 
-    # Try real SHAP first; if the environment is incompatible, fall back to a
-    # transparent permutation attribution that uses the same model.
-    try:
-        import shap  # noqa
-        _shap_available = True
-    except Exception:
-        _shap_available = False
-
-    if not _shap_available:
-        return _permutation_attribution(pipeline, tfidf, clf, sentence, feature_names, X, top_k)
-
     clf_class = clf.__class__.__name__
+    explainer_kind = "unknown"
+
     try:
         if clf_class in ("RandomForestClassifier", "XGBClassifier"):
-            # KernelExplainer works with numpy 2.x. Slower but compatible.
             explainer = shap.TreeExplainer(clf)
             shap_values = explainer.shap_values(X)
+            explainer_kind = "TreeExplainer"
         elif clf_class == "LogisticRegression":
             explainer = shap.LinearExplainer(
                 clf, X, feature_perturbation="interventional"
             )
             shap_values = explainer.shap_values(X)
+            explainer_kind = "LinearExplainer"
         else:
-            explainer = shap.TreeExplainer(clf)
+            explainer = shap.KernelExplainer(clf.predict_proba, X)
             shap_values = explainer.shap_values(X)
+            explainer_kind = "KernelExplainer"
     except Exception as exc:
-        logger.warning("SHAP explainer failed: %s", exc)
-        return {"error": str(exc), "features": []}
+        logger.warning("Real SHAP failed (%s) — using permutation fallback: %s",
+                       clf_class, exc)
+        return _permutation_attribution(
+            pipeline, tfidf, clf, sentence, feature_names, X, top_k
+        )
 
     sv = _extract_unsubstantiated_slice(shap_values, clf)
 
@@ -92,6 +95,7 @@ def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
             "features": [],
             "note": "No model features fired for this sentence.",
             "model": metadata.get("model"),
+            "explainer": explainer_kind,
         }
 
     contribs = sv[nonzero]
@@ -109,6 +113,7 @@ def explain_with_shap(sentence: str, *, top_k: int = 10) -> dict[str, Any]:
 
     return {
         "model": metadata.get("model"),
+        "explainer": explainer_kind,
         "model_metrics": {
             "f1_macro": metadata.get("f1_macro"),
             "roc_auc": metadata.get("roc_auc"),
@@ -167,6 +172,7 @@ def explain_with_lime(
 
     return {
         "model": metadata.get("model"),
+        "explainer": "LimeTextExplainer",
         "features": features,
         "note": (
             "LIME approximates the model locally. Positive weight pushes toward "
@@ -175,14 +181,10 @@ def explain_with_lime(
     }
 
 
+# ---------------------------------------------------------------------------
+# Fallback: permutation attribution (only used if real SHAP crashes)
+# ---------------------------------------------------------------------------
 def _permutation_attribution(pipeline, tfidf, clf, sentence, feature_names, X, top_k):
-    """
-    Transparent fallback: for each active token, measure how the model's
-    probability of 'unsubstantiated' changes when we zero that token out.
-    Same conceptual output as SHAP, no external dependencies beyond sklearn.
-
-    Clearly labelled so nobody confuses it with exact SHAP.
-    """
     classes = list(clf.classes_)
     idx = classes.index("unsubstantiated")
     base_proba = clf.predict_proba(X)[0, idx]
@@ -202,9 +204,10 @@ def _permutation_attribution(pipeline, tfidf, clf, sentence, feature_names, X, t
 
     return {
         "model": "permutation-fallback",
+        "explainer": "PermutationFallback",
         "note": (
-            "SHAP unavailable in this environment; using permutation-based "
-            "attribution on the same trained model. Output format is identical. "
+            "Real SHAP unavailable in this environment; using permutation-based "
+            "attribution on the same trained model. Output format identical. "
             "Not proof of company intent."
         ),
         "features": [
