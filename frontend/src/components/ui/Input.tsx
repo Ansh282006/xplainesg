@@ -1,4 +1,4 @@
-import { forwardRef, type InputHTMLAttributes } from 'react'
+﻿import { forwardRef, type InputHTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
@@ -6,7 +6,11 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     <input
       ref={ref}
       className={cn(
-        'h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 disabled:bg-slate-50',
+        'h-9 w-full rounded-md border border-line-strong bg-surface px-3 text-sm text-ink placeholder:text-ink-faint',
+        'transition-all duration-base ease-out-quart',
+        'hover:border-slate-300',
+        'focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10',
+        'disabled:cursor-not-allowed disabled:bg-surface-muted disabled:text-ink-faint',
         className,
       )}
       {...props}
