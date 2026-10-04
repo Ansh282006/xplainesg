@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, ArrowLeft, CheckCircle2, Gauge } from 'lucide-react'
@@ -56,6 +57,7 @@ function ratingBand(r: number | null | undefined): string {
 
 export function AnalysisDetail() {
   const { id } = useParams<{ id: string }>()
+  const [narrativeOpen, setNarrativeOpen] = useState(false)
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['analysis', id],
@@ -238,7 +240,7 @@ export function AnalysisDetail() {
 
       <AttributionPanel analysisId={a.id} />
 
-      <NarrativeCard analysisId={a.id} />
+      <NarrativeCard analysisId={a.id} expanded={narrativeOpen} onToggle={setNarrativeOpen} />
 
       <FactorChart analysisId={a.id} />
 

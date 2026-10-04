@@ -8,6 +8,7 @@ import { api } from '@/lib/api'
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Spinner } from '@/components/ui/Spinner'
 import { cn } from '@/lib/utils'
+import { AnimatedFormula } from '@/components/AnimatedFormula'
 
 interface Contribution {
   component: string
@@ -114,9 +115,9 @@ export function AttributionPanel({ analysisId }: Props) {
             <span className="text-2xl text-slate-400">/10</span>
           </div>
           <p className="mt-3 text-xs text-slate-600">{data.note}</p>
-          <p className="mt-3 rounded-md bg-white/60 px-3 py-2 font-mono text-[11px] text-slate-700">
-            {data.formula}
-          </p>
+          <div className="mt-3">
+            <AnimatedFormula formula={data.formula} />
+          </div>
         </div>
 
         <div>
