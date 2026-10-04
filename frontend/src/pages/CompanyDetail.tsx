@@ -1,4 +1,4 @@
-﻿import { useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import {
   ArrowLeft, Building2, FileText, Globe, PlayCircle, TrendingDown, TrendingUp,
@@ -106,7 +106,7 @@ export function CompanyDetail() {
     })
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 stagger">
       <div>
         <Link to="/companies" className="mb-3 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-900">
           <ArrowLeft className="h-4 w-4" /> Companies

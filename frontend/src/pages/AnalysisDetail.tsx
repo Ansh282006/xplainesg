@@ -80,7 +80,7 @@ export function AnalysisDetail() {
   const rating = a.risk_rating ?? (a.greenwashing_probability != null ? a.greenwashing_probability * 10 : null)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 stagger">
       <div>
         <Link
           to={`/companies/${a.company_id}`}
