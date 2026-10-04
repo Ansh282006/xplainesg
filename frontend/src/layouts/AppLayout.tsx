@@ -5,9 +5,11 @@ import { PageTransition } from '@/components/PageTransition'
 import { Sidebar } from '@/components/Sidebar'
 import { TopBar } from '@/components/TopBar'
 import { useCommandPalette } from '@/hooks/useCommandPalette'
+import { usePageTitle } from '@/hooks/usePageTitle'
 
 export function AppLayout() {
   const { open, setOpen } = useCommandPalette()
+  usePageTitle()
 
   return (
     <div className="flex min-h-screen bg-canvas">
