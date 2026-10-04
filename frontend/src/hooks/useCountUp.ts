@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface Options {
   duration?: number   // ms
@@ -13,7 +13,7 @@ interface Options {
  * Ideal for dashboard KPIs and analysis ratings.
  */
 export function useCountUp(target: number | null | undefined, options: Options = {}) {
-  const { duration = 900, decimals = 2, start = 0 } = options
+  const { duration = 1800, decimals = 2, start = 0 } = options
   const [value, setValue] = useState(start)
   const frameRef = useRef<number | null>(null)
   const startTimeRef = useRef<number | null>(null)

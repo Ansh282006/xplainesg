@@ -120,7 +120,7 @@ export function AnalysisDetail() {
                 <AnimatedNumber
                   value={rating}
                   decimals={2}
-                  duration={1400}
+                  duration={2400}
                   className="relative text-6xl font-semibold"
                 />
               </span>

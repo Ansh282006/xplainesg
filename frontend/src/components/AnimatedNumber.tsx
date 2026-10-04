@@ -14,12 +14,12 @@ interface Props {
 
 export function AnimatedNumber({
   value,
-  duration = 900,
+  duration = 1800,
   decimals = 2,
   className,
   prefix = '',
   suffix = '',
-  fallback = '—',
+  fallback = 'â€”',
 }: Props) {
   const display = useCountUp(value, { duration, decimals })
 

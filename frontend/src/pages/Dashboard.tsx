@@ -53,7 +53,7 @@ function bandTone(r: number | null | undefined): string {
 }
 
 function bandLabel(r: number | null | undefined): string {
-  if (r === null || r === undefined) return 'â€”'
+  if (r === null || r === undefined) return 'Ã¢â‚¬â€'
   if (r < 3) return 'LOW'
   if (r < 6) return 'MEDIUM'
   return 'HIGH'
@@ -123,7 +123,7 @@ export function Dashboard() {
     ? recentItems.reduce((sum, r) => sum + (r.risk_rating ?? (r.greenwashing_probability ?? 0) * 10), 0) / recentItems.length
     : null
 
-  // Trend: current week vs previous week (mock â€” refine later)
+  // Trend: current week vs previous week (mock Ã¢â‚¬â€ refine later)
   const trendWindow = recentItems.slice(0, 4).map((r) => ({
     date: new Date(r.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
     rating: r.risk_rating ?? ((r.greenwashing_probability ?? 0) * 10),
@@ -181,7 +181,7 @@ export function Dashboard() {
           <CardBody>
             <div className="flex items-baseline gap-2">
               <span className={cn('text-5xl font-semibold tabular-nums tracking-tight', ratingTone(avgRating))}>
-                {avgRating !== null ? avgRating.toFixed(2) : 'â€”'}
+                {avgRating !== null ? avgRating.toFixed(2) : 'Ã¢â‚¬â€'}
               </span>
               <span className="text-2xl text-ink-faint">/10</span>
               <span className={cn('badge ml-2', bandTone(avgRating))}>{bandLabel(avgRating)}</span>
@@ -271,7 +271,7 @@ export function Dashboard() {
           </p>
           <p className="mt-1 text-xs text-ink-faint">
             {data.avg_trust_score === null
-              ? 'Pending â€” needs performance scores'
+              ? 'Pending Ã¢â‚¬â€ needs performance scores'
               : 'Composite score'}
           </p>
         </Card>
@@ -328,22 +328,22 @@ export function Dashboard() {
                             </span>
                           )}
                         </td>
-                        <td className="px-5 py-3 text-ink-muted">{a.sector ?? 'â€”'}</td>
+                        <td className="px-5 py-3 text-ink-muted">{a.sector ?? 'Ã¢â‚¬â€'}</td>
                         <td className="px-5 py-3 text-right">
                           <span className={cn('font-mono font-semibold tabular-nums', ratingTone(rating))}>
-                            {rating !== null ? rating.toFixed(2) : 'â€”'}
+                            {rating !== null ? rating.toFixed(2) : 'Ã¢â‚¬â€'}
                           </span>
                         </td>
                         <td className="px-5 py-3">
                           {a.greenwashing_risk ? (
                             <Badge className={riskTone(a.greenwashing_risk)}>{a.greenwashing_risk}</Badge>
-                          ) : <span className="text-ink-faint">â€”</span>}
+                          ) : <span className="text-ink-faint">Ã¢â‚¬â€</span>}
                         </td>
                         <td className="px-5 py-3 text-right tabular-nums text-ink-muted">
                           {formatScore(a.claim_credibility_score)}
                         </td>
                         <td className="px-5 py-3 font-mono text-xs text-ink-faint">
-                          {a.model_version ?? 'â€”'}
+                          {a.model_version ?? 'Ã¢â‚¬â€'}
                         </td>
                         <td className="px-5 py-3 text-right text-xs text-ink-faint">
                           {formatDate(a.created_at)}
