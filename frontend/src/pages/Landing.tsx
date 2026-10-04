@@ -1,4 +1,4 @@
-﻿import { Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import {
   ArrowRight, BarChart3, FileText, Layers, LineChart, Scale, ShieldCheck, Sparkles, TrendingUp,
 } from 'lucide-react'
@@ -103,7 +103,7 @@ export function Landing() {
       <section className="border-t border-line bg-slate-50">
         <div className="mx-auto grid max-w-6xl gap-6 px-6 py-16 md:grid-cols-2 lg:grid-cols-4 stagger">
           {PILLARS.map(({ icon: Icon, title, body }) => (
-            <div key={title} className="surface card-interactive p-6">
+            <div key={title} className="surface hover-elevate p-6">
               <Icon className="h-5 w-5 text-brand-700" />
               <h3 className="mt-4 text-base font-semibold text-ink">{title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-ink-muted">{body}</p>
@@ -154,7 +154,7 @@ export function Landing() {
               { n: '4', t: 'Explain', d: 'SHAP, LIME, factor aggregation.' },
               { n: '5', t: 'Review',  d: 'Human sign-off + audit trail.' },
             ].map((s) => (
-              <li key={s.n} className="surface card-interactive p-5">
+              <li key={s.n} className="surface hover-elevate p-5">
                 <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">
                   {s.n}
                 </div>
@@ -199,7 +199,7 @@ export function Landing() {
             </ul>
           </div>
 
-          <div className="surface card-interactive p-8">
+          <div className="surface hover-elevate p-8">
             <p className="label">Our definition of greenwashing risk</p>
             <blockquote className="mt-3 text-lg font-medium leading-snug text-ink">
               The gap between what a company <em>claims</em> and what its own{' '}

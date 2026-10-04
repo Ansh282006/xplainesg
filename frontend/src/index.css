@@ -127,3 +127,69 @@
   .delay-400 { animation-delay: 400ms; }
   .delay-500 { animation-delay: 500ms; }
 }
+
+@layer utilities {
+  /* ---- Elevated card hover (Stripe/Linear tier) ---- */
+  .hover-elevate {
+    @apply relative transition-all duration-300 ease-out-quart;
+    box-shadow: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  }
+  .hover-elevate:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 4px 6px -1px rgb(15 23 42 / 0.07),
+      0 12px 24px -6px rgb(15 23 42 / 0.10),
+      0 0 0 1px rgb(15 23 42 / 0.02);
+  }
+
+  /* ---- Subtle lift (badges, small chips) ---- */
+  .hover-lift {
+    @apply transition-all duration-200 ease-out-quart;
+  }
+  .hover-lift:hover {
+    transform: translateY(-1px);
+  }
+
+  /* ---- Glow ring on hover (accent cards) ---- */
+  .hover-glow {
+    @apply relative transition-all duration-300 ease-out-quart;
+  }
+  .hover-glow::after {
+    content: '';
+    @apply absolute inset-0 rounded-lg opacity-0 transition-opacity duration-300;
+    box-shadow: 0 0 0 1px rgb(44 98 145 / 0.15), 0 8px 24px -8px rgb(44 98 145 / 0.25);
+    pointer-events: none;
+  }
+  .hover-glow:hover::after {
+    @apply opacity-100;
+  }
+
+  /* ---- 3D tilt — very subtle rotate on hover ---- */
+  .hover-tilt {
+    @apply transition-transform duration-300 ease-out-quart;
+    transform-style: preserve-3d;
+  }
+  .hover-tilt:hover {
+    transform: perspective(900px) rotateX(1.5deg) rotateY(-1.5deg) translateY(-2px);
+  }
+
+  /* ---- Underline grow on link hover ---- */
+  .hover-underline-grow {
+    @apply relative;
+  }
+  .hover-underline-grow::after {
+    content: '';
+    @apply absolute left-0 -bottom-0.5 h-px w-0 bg-current transition-all duration-300;
+  }
+  .hover-underline-grow:hover::after {
+    @apply w-full;
+  }
+
+  /* ---- Scale-in on hover ---- */
+  .hover-scale {
+    @apply transition-transform duration-200 ease-out-quart;
+  }
+  .hover-scale:hover {
+    transform: scale(1.02);
+  }
+}
