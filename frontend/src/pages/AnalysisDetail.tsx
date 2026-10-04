@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Spinner } from '@/components/ui/Spinner'
+import { AnimatedNumber } from '@/components/AnimatedNumber'
 import { cn, formatDate, formatScore, riskTone } from '@/lib/utils'
 import type { Analysis } from '@/types'
 import { ExplanationPanel } from '@/components/ExplanationPanel'
@@ -110,10 +111,20 @@ export function AnalysisDetail() {
           <div>
             <p className="label">Greenwashing Risk Rating</p>
             <div className="mt-2 flex items-baseline gap-2">
-              <span className={cn('text-6xl font-semibold tabular-nums', ratingToneClass(rating))}>
-                {rating !== null ? rating.toFixed(2) : '-'}
+              <span className={cn('relative', ratingToneClass(rating))}>
+                <span className={cn(
+                  'absolute inset-0 rounded-full animate-pulse-ring',
+                  rating !== null && rating >= 6 ? 'bg-red-400/20' :
+                  rating !== null && rating >= 3 ? 'bg-amber-400/20' : 'bg-eco-400/20',
+                )} />
+                <AnimatedNumber
+                  value={rating}
+                  decimals={2}
+                  duration={1400}
+                  className="relative text-6xl font-semibold"
+                />
               </span>
-              <span className="text-3xl text-slate-400">/10</span>
+              <span className="text-3xl text-ink-faint">/10</span>
               <span className={cn('ml-2 text-sm font-medium uppercase tracking-wide', ratingToneClass(rating))}>
                 {ratingBand(rating)}
               </span>
