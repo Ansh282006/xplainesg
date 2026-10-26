@@ -211,15 +211,17 @@ def run_analysis(sb, *, report_id, override_indicators=None):
         "divergence_components": divergence_agg,
     }
 
+    perf_components = performance.get("components") or {}
+
     row = {
         "company_id": company_id,
         "report_id": report_id,
         "model_version": scoring_version,
         "esg_performance_score": performance.get("score"),
         "esg_trust_score": trust.get("score"),
-        "environmental_score": None,
-        "social_score": None,
-        "governance_score": None,
+        "environmental_score": perf_components.get("environmental"),
+        "social_score": perf_components.get("social"),
+        "governance_score": perf_components.get("governance"),
         "claim_credibility_score": credibility.get("score"),
         "greenwashing_risk": greenwashing.get("risk"),
         "greenwashing_probability": greenwashing.get("score"),

@@ -1,4 +1,4 @@
-﻿"""
+"""
 ESG scoring configuration and pure functions. Versioned. No I/O.
 """
 from __future__ import annotations
@@ -59,27 +59,180 @@ def compute_claim_credibility(claims: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def compute_esg_performance(indicators: dict[str, Any] | None) -> dict[str, Any]:
+    """
+    Sector-relative ESG Performance Score (0-100).
+
+    Methodology:
+      Each indicator is normalised to 0-1 where higher is better.
+      Environmental, Social, and Governance subscores are weighted
+      using ESG_WEIGHTS (0.40 / 0.30 / 0.30).
+      Missing indicators are excluded; weights are renormalised
+      over available sub-components only.
+
+    Environment:
+      renewable_energy_percentage  → higher is better
+      carbon_emissions             → lower is better (inverted)
+      water_consumption            → lower is better (inverted)
+      waste_generated              → lower is better (inverted)
+      waste_recycled               → higher is better
+
+    Social:
+      diversity_percentage         → higher is better
+      training_hours               → higher is better
+      community_investment         → higher is better
+      workplace_incidents          → lower is better (inverted)
+      employee_turnover            → lower is better (inverted)
+
+    Governance:
+      board_independence           → higher is better
+      board_diversity              → higher is better
+      governance_score             → higher is better (already 0-100)
+      corruption_incidents         → lower is better (inverted, capped)
+      compliance_incidents         → lower is better (inverted, capped)
+    """
     if not indicators:
         return {"score": None, "reason": "no_indicators"}
 
-    required_any = [
-        "carbon_emissions", "renewable_energy_percentage",
-        "employee_count", "board_independence", "governance_score",
-    ]
-    present = [k for k in required_any if indicators.get(k) is not None]
+    def _get(key: str) -> float | None:
+        v = indicators.get(key)
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
 
-    if len(present) < 2:
+    # -----------------------------------------------------------------------
+    # Environmental (0-1 per indicator, mean across available)
+    # -----------------------------------------------------------------------
+    env_signals: list[float] = []
+
+    ren = _get("renewable_energy_percentage")
+    if ren is not None:
+        env_signals.append(min(ren / 100.0, 1.0))
+
+    # Inverted metrics: assume 1M tCO2e = worst, 0 = best
+    carbon = _get("carbon_emissions")
+    if carbon is not None:
+        env_signals.append(max(0.0, 1.0 - min(carbon / 1_000_000.0, 1.0)))
+
+    water = _get("water_consumption")
+    if water is not None:
+        env_signals.append(max(0.0, 1.0 - min(water / 5_000_000.0, 1.0)))
+
+    waste = _get("waste_generated")
+    if waste is not None:
+        env_signals.append(max(0.0, 1.0 - min(waste / 100_000.0, 1.0)))
+
+    waste_rec = _get("waste_recycled")
+    if waste_rec is not None and waste and waste > 0:
+        env_signals.append(min(waste_rec / waste, 1.0))
+
+    env_score = (
+        sum(env_signals) / len(env_signals) * 100
+        if env_signals else None
+    )
+
+    # -----------------------------------------------------------------------
+    # Social
+    # -----------------------------------------------------------------------
+    soc_signals: list[float] = []
+
+    div = _get("diversity_percentage")
+    if div is not None:
+        # 50% = ideal, below or above both count (from a diversity lens)
+        soc_signals.append(min(div / 50.0, 1.0))
+
+    training = _get("training_hours")
+    if training is not None:
+        # 100 hours per employee = best practice
+        soc_signals.append(min(training / 100.0, 1.0))
+
+    community = _get("community_investment")
+    if community is not None:
+        # 2% of revenue as CSR = best practice (approximation: 1000 cr = best)
+        soc_signals.append(min(community / 1000.0, 1.0))
+
+    incidents = _get("workplace_incidents")
+    if incidents is not None:
+        soc_signals.append(max(0.0, 1.0 - min(incidents / 50.0, 1.0)))
+
+    turnover = _get("employee_turnover")
+    if turnover is not None:
+        # 30% turnover = worst
+        soc_signals.append(max(0.0, 1.0 - min(turnover / 30.0, 1.0)))
+
+    soc_score = (
+        sum(soc_signals) / len(soc_signals) * 100
+        if soc_signals else None
+    )
+
+    # -----------------------------------------------------------------------
+    # Governance
+    # -----------------------------------------------------------------------
+    gov_signals: list[float] = []
+
+    board_ind = _get("board_independence")
+    if board_ind is not None:
+        gov_signals.append(min(board_ind / 100.0, 1.0))
+
+    board_div = _get("board_diversity")
+    if board_div is not None:
+        gov_signals.append(min(board_div / 50.0, 1.0))
+
+    gov = _get("governance_score")
+    if gov is not None:
+        gov_signals.append(min(gov / 100.0, 1.0))
+
+    corruption = _get("corruption_incidents")
+    if corruption is not None:
+        gov_signals.append(max(0.0, 1.0 - min(corruption / 5.0, 1.0)))
+
+    compliance = _get("compliance_incidents")
+    if compliance is not None:
+        gov_signals.append(max(0.0, 1.0 - min(compliance / 10.0, 1.0)))
+
+    gov_score = (
+        sum(gov_signals) / len(gov_signals) * 100
+        if gov_signals else None
+    )
+
+    # -----------------------------------------------------------------------
+    # Composite — weighted, renormalised over available sub-scores
+    # -----------------------------------------------------------------------
+    components = {
+        "environmental": env_score,
+        "social": soc_score,
+        "governance": gov_score,
+    }
+    available = {k: v for k, v in components.items() if v is not None}
+
+    if not available:
         return {
             "score": None,
-            "reason": "insufficient_indicators",
-            "present": present,
+            "reason": "no_usable_indicators",
+            "components": components,
+        }
+
+    if len(available) < 2:
+        return {
+            "score": None,
+            "reason": "insufficient_indicators_for_composite",
+            "components": components,
             "required_min": 2,
         }
 
+    weight_sum = sum(ESG_WEIGHTS[k] for k in available)
+    composite = (
+        sum(ESG_WEIGHTS[k] * v for k, v in available.items()) / weight_sum
+    )
+
     return {
-        "score": None,
-        "reason": "scoring_not_implemented_in_baseline",
-        "present": present,
+        "score": round(composite, 2),
+        "components": {
+            k: round(v, 2) if v is not None else None
+            for k, v in components.items()
+        },
+        "available_components": list(available.keys()),
+        "weights_used": {k: ESG_WEIGHTS[k] for k in available},
     }
 
 

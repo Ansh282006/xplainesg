@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
+    models,
     analysis, audit_logs, auth, companies, dashboard, explanations, fairness, health, indicators, reports,
 )
 from app.core.config import get_settings
@@ -39,7 +40,7 @@ app.include_router(analysis.router, prefix="/analysis", tags=["analysis"])
 app.include_router(indicators.router, prefix="/indicators", tags=["indicators"])
 app.include_router(reports.router, prefix="/reports", tags=["reports"])
 app.include_router(fairness.router, prefix="/fairness", tags=["fairness"])
-app.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit-logs"])
+app.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit-logs"])`napp.include_router(models.router, prefix="/models", tags=["models"])
 app.include_router(explanations.router, prefix="/explanations", tags=["explanations"])
 
 
