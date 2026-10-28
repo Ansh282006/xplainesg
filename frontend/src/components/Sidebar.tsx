@@ -1,7 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import {
-  Building2, FileSearch, Gauge, LayoutDashboard, Scale, ScrollText, ShieldCheck, Sparkles,
-} from 'lucide-react'
+import { Building2, FileSearch, Gauge, LayoutDashboard, ListChecks, Scale, ScrollText, ShieldCheck, Sparkles } from 'lucide-react'
 
 import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/lib/utils'
@@ -41,6 +39,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Administration',
     items: [
+      { to: '/reviews', label: 'Review Queue', icon: ListChecks, roles: ['admin', 'reviewer'] },
       { to: '/audit', label: 'Audit Log', icon: ShieldCheck, roles: ['admin', 'reviewer'] },
     ],
   },

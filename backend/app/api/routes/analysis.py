@@ -1,9 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.api.deps import get_current_user, require_roles
 from app.core.scoring import compute_indicator_weakness_public
 from app.database.supabase_client import get_supabase_admin
 from app.schemas.analysis import (
@@ -12,19 +13,19 @@ from app.schemas.analysis import (
     AnalysisResult,
     IndicatorPreviewRequest,
     IndicatorPreviewResponse,
+    ReviewCreate,
 )
+from app.schemas.auth import CurrentUser
 from app.services import analysis_service
 
 router = APIRouter()
 
 
-# --- STATIC routes first (no path params) ---
+# --- STATIC routes first ---
 @router.post("/preview", response_model=IndicatorPreviewResponse)
 async def preview_rating(payload: IndicatorPreviewRequest) -> IndicatorPreviewResponse:
     """
     Live 0-10 risk preview from user-supplied indicators only.
-    Does NOT touch the database. Does NOT run the ML model.
-    Purely a transparent rule over the indicators the user typed.
     """
     result = compute_indicator_weakness_public(payload.indicators or {})
 
@@ -70,7 +71,7 @@ async def create_analysis(payload: AnalysisCreate) -> AnalysisResult:
     )
 
 
-# --- DYNAMIC routes last (with path params) ---
+# --- DYNAMIC routes last ---
 @router.get("/{analysis_id}", response_model=AnalysisOut)
 async def get_analysis(analysis_id: UUID) -> AnalysisOut:
     sb = get_supabase_admin()
@@ -84,3 +85,31 @@ async def get_analysis(analysis_id: UUID) -> AnalysisOut:
     if not res.data:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return AnalysisOut(**res.data[0])
+
+
+@router.post("/{analysis_id}/review")
+async def review_analysis(
+    analysis_id: UUID,
+    payload: ReviewCreate,
+    user: CurrentUser = Depends(require_roles("admin", "reviewer")),
+) -> dict:
+    sb = get_supabase_admin()
+    try:
+        return analysis_service.submit_review(
+            sb, analysis_id=str(analysis_id), reviewer_id=str(user.id), payload=payload
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.get("/{analysis_id}/review")
+async def get_review(analysis_id: UUID) -> dict | None:
+    sb = get_supabase_admin()
+    res = (
+        sb.table("human_reviews")
+        .select("*")
+        .eq("analysis_id", str(analysis_id))
+        .limit(1)
+        .execute()
+    )
+    return res.data[0] if res.data else None

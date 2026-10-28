@@ -6,6 +6,7 @@ from typing import Any
 from supabase import Client
 
 from app.core import scoring
+from app.schemas.analysis import ReviewCreate
 from app.core.divergence import aggregate_divergence, compute_divergence
 from app.explainability.claim_explainer import explain_with_lime, explain_with_shap
 from app.ml.claim_classifier import load_active_model, predict_unsubstantiated_probabilities
@@ -267,3 +268,38 @@ def run_analysis(sb, *, report_id, override_indicators=None):
         "evidence_table": evidence_table[:50],
         "evidence_summary": divergence_agg,
     }
+
+
+def submit_review(
+    sb,
+    *,
+    analysis_id: str,
+    reviewer_id: str,
+    payload: ReviewCreate,
+) -> dict:
+    """Record a human review decision and audit it."""
+    # Verify analysis exists
+    a_res = sb.table("analyses").select("id").eq("id", analysis_id).limit(1).execute()
+    if not a_res.data:
+        raise LookupError(f"Analysis not found: {analysis_id}")
+
+    row = {
+        "analysis_id": analysis_id,
+        "reviewer_id": reviewer_id,
+        "reviewer_decision": payload.decision,
+        "reviewer_comments": payload.comments,
+    }
+    res = sb.table("human_reviews").insert(row).execute()
+    review = res.data[0]
+
+    # Audit
+    from app.services.audit_service import log_action
+    log_action(
+        sb,
+        user_id=reviewer_id,
+        action="analysis.review",
+        entity_type="analysis",
+        entity_id=analysis_id,
+        new_value=review,
+    )
+    return review

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
+
+ReviewDecision = Literal["accepted", "rejected", "needs_review"]
 
 
 class AnalysisCreate(BaseModel):
@@ -69,3 +71,18 @@ class IndicatorPreviewResponse(BaseModel):
     signals: dict[str, float]
     breakdown: dict[str, Any]
     note: str
+
+
+class ReviewCreate(BaseModel):
+    decision: ReviewDecision
+    comments: str | None = None
+
+
+class ReviewOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    analysis_id: UUID
+    reviewer_id: UUID
+    reviewer_decision: ReviewDecision
+    reviewer_comments: str | None
+    reviewed_at: datetime
