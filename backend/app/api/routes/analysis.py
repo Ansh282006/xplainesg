@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from uuid import UUID
 
@@ -109,6 +109,7 @@ async def get_review(analysis_id: UUID) -> dict | None:
         sb.table("human_reviews")
         .select("*")
         .eq("analysis_id", str(analysis_id))
+        .order("reviewed_at", desc=True)
         .limit(1)
         .execute()
     )

@@ -13,6 +13,7 @@ import type { Analysis } from '@/types'
 import { ExplanationPanel } from '@/components/ExplanationPanel'
 import { AttributionPanel } from '@/components/AttributionPanel'
 import { NarrativeCard } from '@/components/NarrativeCard'
+import { ReviewWidget } from '@/components/ReviewWidget'
 import { FactorChart } from '@/components/FactorChart'
 
 interface EvidenceRow {
@@ -243,6 +244,8 @@ export function AnalysisDetail() {
       <NarrativeCard analysisId={a.id} expanded={narrativeOpen} onToggle={setNarrativeOpen} />
 
       <FactorChart analysisId={a.id} />
+
+      <ReviewWidget analysisId={a.id} />
 
       <ExplanationPanel analysisId={a.id} />
 

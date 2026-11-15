@@ -12,6 +12,9 @@ import { AnalysisDetail } from '@/pages/AnalysisDetail'
 import { ClaimExplorer } from '@/pages/ClaimExplorer'
 import { Fairness } from '@/pages/Fairness'
 import { AuditLog } from '@/pages/AuditLog'
+import { Governance } from '@/pages/Governance'
+import { Models } from '@/pages/Models'
+import { ReviewQueue } from '@/pages/ReviewQueue'
 
 export function App() {
   return (
@@ -29,6 +32,9 @@ export function App() {
           <Route path="/claims" element={<ClaimExplorer />} />
           <Route path="/fairness" element={<Fairness />} />
           <Route path="/audit" element={<AuditLog />} />
+          <Route path="/governance" element={<Governance />} />
+          <Route path="/models" element={<Models />} />
+          <Route path="/reviews" element={<ReviewQueue />} />
         </Route>
       </Route>
 
